@@ -9,7 +9,7 @@
 
 #include "shaders.c"
 
-static float points[100][4];
+static float points[200][4];
 
 typedef struct __vec2 {
   float x, y;
@@ -125,15 +125,21 @@ int main() {
 
   vec2 start = {-0.5, -0.5};
 
-  for (int i = 0; i < 10; i++) {
-    for (int j = 0; j < 10; j++) {
-      vec2 arrow = unit_vector(foo(start.x + ((float)i/10.0f), start.y + ((float)j/10.0f)));
+  int num_rows = 10;
+  int num_columns = 10;
 
-      points[10*i + j][0] = start.x + ((float)i/10.0f);
-      points[10*i + j][1] = start.y + ((float)j/10.0f);
+  for (int j = 0; j < num_rows; j++) {
+    for (int i = 0; i < num_columns; i++) {
+      vec2 arrow = unit_vector(foo(start.x + ((float)i/num_rows),
+                                   start.y + ((float)j/num_columns)));
 
-      points[10*i + j][2] = arrow.x * 0.05;
-      points[10*i + j][3] = arrow.y * 0.05;
+      int index = num_rows*i + j;
+
+      points[index][0] = start.x + ((float)i/num_rows);
+      points[index][1] = start.y + ((float)j/num_columns);
+
+      points[index][2] = arrow.x * 0.05;
+      points[index][3] = arrow.y * 0.05;
     }
   }
 
@@ -148,7 +154,7 @@ int main() {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glDrawArrays(GL_POINTS, 0, 450);
+    glDrawArrays(GL_POINTS, 0, 800);
 
     SDL_GL_SwapWindow(window);
   }
