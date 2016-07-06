@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <math.h>
 
 #define GLEW_STATIC
 #include <GL/glew.h>
@@ -6,8 +7,34 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 
+#include "shaders.c"
 
-#define GLSL(src) "#version 150 core\n" #src
+static float points[100][4];
+
+typedef struct __vec2 {
+  float x, y;
+} vec2;
+
+vec2
+foo(float x, float y) {
+  vec2 result;
+  result.x = x + y;
+  result.y = x - y;
+
+  return result;
+}
+
+vec2
+unit_vector(vec2 v) {
+  float m = sqrt(v.x*v.x + v.y*v.y);
+  vec2 result;
+
+  result.x = v.x / m;
+  result.y = v.y / m;
+
+  return result;
+}
+
 
 static void
 show_info_log(GLuint object,
@@ -23,83 +50,6 @@ show_info_log(GLuint object,
   free(log);
 }
 
-
-const char* vertex_shader_src =
-  GLSL(
-       in vec2 pos;
-       in vec3 color;
-       in vec2 dir;
-
-       out vec3 vColor;
-       out vec2 vDir;
-
-       uniform vec2 scale_factor;
-
-       mat4 scale(float x, float y) {
-         return mat4(x, 0.0, 0.0, 0.0,
-                     0.0, y, 0.0, 0.0,
-                     0.0, 0.0, 1.0, 0.0,
-                     0.0, 0.0, 0.0, 1.0);
-       }
-
-       void main() {
-         gl_Position = scale(scale_factor.x, scale_factor.y) * vec4(pos, 0.0, 1.0);
-         vColor = color;
-         vDir = dir;
-       }
-       );
-
-const char* fragment_shader_src =
-  GLSL(
-       in vec3 fColor;
-       out vec4 outColor;
-
-       void main() {
-         outColor = vec4(fColor, 1.0);
-       }
-       );
-
-const char* geometry_shader_src =
-  GLSL(
-       layout(points) in;
-       layout(line_strip, max_vertices=5) out;
-
-       in vec3 vColor[];
-       in vec2 vDir[];
-       out vec3 fColor;
-
-       uniform vec2 scale_factor;
-
-       float PI = 3.1415926;
-
-       void main() {
-         fColor = vColor[0];    /* point has only one vertex */
-
-         gl_Position = gl_in[0].gl_Position;
-         EmitVertex();
-
-         gl_Position = gl_in[0].gl_Position + vec4(vDir[0], 0.0, 0.0);
-         EmitVertex();
-
-         /* Arrowhead */
-         float ang = (PI / 6.0) - atan(vDir[0].y, vDir[0].x);
-
-         gl_Position = gl_in[0].gl_Position + (vec4(vDir[0], 0.0, 0.0) +
-                                               vec4(-cos(ang)*0.04, sin(ang)*0.04, 0.0, 0.0));
-         EmitVertex();
-
-         gl_Position = gl_in[0].gl_Position + vec4(vDir[0], 0.0, 0.0);
-         EmitVertex();
-
-         ang = -(PI / 6.0) - atan(vDir[0].y, vDir[0].x);
-
-         gl_Position = gl_in[0].gl_Position + (vec4(vDir[0], 0.0, 0.0) +
-                                               vec4(-cos(ang)*0.04, sin(ang)*0.04, 0.0, 0.0));
-         EmitVertex();
-
-         EndPrimitive();
-       }
-       );
 
 GLuint create_shader(GLenum type, const GLchar *src) {
   GLuint shader = glCreateShader(type);
@@ -147,42 +97,47 @@ int main() {
   glLinkProgram(shaderProgram);
   glUseProgram(shaderProgram);
 
-  /* Buffer data */
-  GLuint vbo;
-  glGenBuffers(1, &vbo);
-
-  float points[] = {
-    -0.45f,  0.45f,  1.0f, 0.0f, 0.0f,  0.1, 0.0, // Red point
-    0.45f,  0.45f,   0.0f, 1.0f, 0.0f,  -0.1, 0.1,// Green point
-    0.45f, -0.45f,   0.0f, 0.0f, 1.0f,  0.0, 0.2, // Blue point
-    -0.45f, -0.45f,  1.0f, 1.0f, 0.0f,  0.1, 0.1 // Yellow point
-  };
-
-  glBindBuffer(GL_ARRAY_BUFFER, vbo);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
-
   // Create VAO
   GLuint vao;
   glGenVertexArrays(1, &vao);
   glBindVertexArray(vao);
 
+  /* Buffer data */
+  GLuint vbo;
+  glGenBuffers(1, &vbo);
+
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
+
+
   // Specify layout of point data
   GLint posAttrib = glGetAttribLocation(shaderProgram, "pos");
   glEnableVertexAttribArray(posAttrib);
-  glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 7*sizeof(float), 0);
-
-  GLint colAttrib = glGetAttribLocation(shaderProgram, "color");
-  glEnableVertexAttribArray(colAttrib);
-  glVertexAttribPointer(colAttrib, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float),
-                        (void*)(2*sizeof(float)));
+  glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), 0);
 
   GLint dirAttrib = glGetAttribLocation(shaderProgram, "dir");
   glEnableVertexAttribArray(dirAttrib);
-  glVertexAttribPointer(dirAttrib, 2, GL_FLOAT, GL_FALSE, 7*sizeof(float),
-                        (void*)(5*sizeof(float)));
+  glVertexAttribPointer(dirAttrib, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float),
+                        (void*)(2*sizeof(float)));
 
   GLint scaleUniform = glGetUniformLocation(shaderProgram, "scale_factor");
   glUniform2f(scaleUniform, 1.0, 1.0);
+
+  vec2 start = {-0.5, -0.5};
+
+  for (int i = 0; i < 10; i++) {
+    for (int j = 0; j < 10; j++) {
+      vec2 arrow = unit_vector(foo(start.x + ((float)i/10.0f), start.y + ((float)j/10.0f)));
+
+      points[10*i + j][0] = start.x + ((float)i/10.0f);
+      points[10*i + j][1] = start.y + ((float)j/10.0f);
+
+      points[10*i + j][2] = arrow.x * 0.05;
+      points[10*i + j][3] = arrow.y * 0.05;
+    }
+  }
+
+  glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
 
   SDL_Event windowEvent;
   while (true) {
@@ -193,7 +148,7 @@ int main() {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glDrawArrays(GL_POINTS, 0, 4);
+    glDrawArrays(GL_POINTS, 0, 450);
 
     SDL_GL_SwapWindow(window);
   }
