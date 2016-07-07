@@ -9,16 +9,33 @@
 
 #include "shaders.c"
 
-static float points[200][4];
+#define WIDTH 800
+#define HEIGHT 600
+
+static int num_rows = 10;
+static int num_columns = 10;
+static float points[100][4];
 
 typedef struct __vec2 {
   float x, y;
 } vec2;
 
+static struct {
+  GLuint vertex_shader, fragment_shader, geometry_shader, shader_program;
+
+  struct {
+    GLint pos, dir;
+  } attributes;
+
+  struct {
+    GLint scale;
+  } uniforms;
+} g_pplane_state;
+
 vec2
 foo(float x, float y) {
   vec2 result;
-  result.x = x + y;
+  result.x = x*x + y;
   result.y = x - y;
 
   return result;
@@ -69,33 +86,19 @@ GLuint create_shader(GLenum type, const GLchar *src) {
   return shader;
 }
 
+int
+create_gl_resources() {
+  g_pplane_state.vertex_shader = create_shader(GL_VERTEX_SHADER, vertex_shader_src);
+  g_pplane_state.fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_src);
+  g_pplane_state.geometry_shader = create_shader(GL_GEOMETRY_SHADER, geometry_shader_src);
 
-int main() {
-  SDL_Init(SDL_INIT_EVERYTHING);
-
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-  SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-
-  SDL_Window* window = SDL_CreateWindow("pplane", 100, 100, 800, 600, SDL_WINDOW_OPENGL);
-  SDL_GLContext context = SDL_GL_CreateContext(window);
-
-  glewExperimental = GL_TRUE;
-  glewInit();
-
-  /* Shaders and GLSL program */
-  GLuint vertexShader = create_shader(GL_VERTEX_SHADER, vertex_shader_src);
-  GLuint fragmentShader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_src);
-  GLuint geometryShader = create_shader(GL_GEOMETRY_SHADER, geometry_shader_src);
-
-  GLuint shaderProgram = glCreateProgram();
-  glAttachShader(shaderProgram, vertexShader);
-  glAttachShader(shaderProgram, fragmentShader);
-  glAttachShader(shaderProgram, geometryShader);
-  glBindFragDataLocation(shaderProgram, 0, "outColor");
-  glLinkProgram(shaderProgram);
-  glUseProgram(shaderProgram);
+  g_pplane_state.shader_program = glCreateProgram();
+  glAttachShader(g_pplane_state.shader_program, g_pplane_state.vertex_shader);
+  glAttachShader(g_pplane_state.shader_program, g_pplane_state.fragment_shader);
+  glAttachShader(g_pplane_state.shader_program, g_pplane_state.geometry_shader);
+  glBindFragDataLocation(g_pplane_state.shader_program, 0, "outColor");
+  glLinkProgram(g_pplane_state.shader_program);
+  glUseProgram(g_pplane_state.shader_program);
 
   // Create VAO
   GLuint vao;
@@ -109,27 +112,60 @@ int main() {
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
   glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
 
-
   // Specify layout of point data
-  GLint posAttrib = glGetAttribLocation(shaderProgram, "pos");
-  glEnableVertexAttribArray(posAttrib);
-  glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), 0);
+  g_pplane_state.attributes.pos = glGetAttribLocation(g_pplane_state.shader_program, "pos");
+  glEnableVertexAttribArray(g_pplane_state.attributes.pos);
+  glVertexAttribPointer(g_pplane_state.attributes.pos, 2, GL_FLOAT,
+                        GL_FALSE, 4*sizeof(float), 0);
 
-  GLint dirAttrib = glGetAttribLocation(shaderProgram, "dir");
-  glEnableVertexAttribArray(dirAttrib);
-  glVertexAttribPointer(dirAttrib, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float),
+  g_pplane_state.attributes.dir = glGetAttribLocation(g_pplane_state.shader_program, "dir");
+  glEnableVertexAttribArray(g_pplane_state.attributes.dir);
+  glVertexAttribPointer(g_pplane_state.attributes.dir, 2, GL_FLOAT,
+                        GL_FALSE, 4*sizeof(float),
                         (void*)(2*sizeof(float)));
 
-  GLint scaleUniform = glGetUniformLocation(shaderProgram, "scale_factor");
-  glUniform2f(scaleUniform, 1.0, 1.0);
+  g_pplane_state.uniforms.scale = glGetUniformLocation(g_pplane_state.shader_program, "scale_factor");
+
+  return 0;
+}
+
+
+vec2
+canonical_mouse_pos() {
+  vec2 result;
+  int x, y;
+  SDL_GetMouseState(&x, &y);
+
+  result.x = 2*((float)x / WIDTH) - 1.0f;
+  result.y = 2*((float)y / HEIGHT) - 1.0f;
+
+  return result;
+}
+
+
+int main() {
+  SDL_Init(SDL_INIT_EVERYTHING);
+
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+  SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+
+  SDL_Window* window = SDL_CreateWindow("pplane", 100, 100, WIDTH, HEIGHT, SDL_WINDOW_OPENGL);
+  SDL_GLContext context = SDL_GL_CreateContext(window);
+
+  glewExperimental = GL_TRUE;
+  glewInit();
+
+  /* Shaders and GLSL program */
+  create_gl_resources();
+
+  glUniform2f(g_pplane_state.uniforms.scale, 1.0, 1.0);
 
   vec2 start = {-0.5, -0.5};
 
-  int num_rows = 10;
-  int num_columns = 10;
-
-  for (int j = 0; j < num_rows; j++) {
-    for (int i = 0; i < num_columns; i++) {
+  for (int i = 0; i < num_columns; i++) {
+    for (int j = 0; j < num_rows; j++) {
       vec2 arrow = unit_vector(foo(start.x + ((float)i/num_rows),
                                    start.y + ((float)j/num_columns)));
 
@@ -150,6 +186,9 @@ int main() {
     if (SDL_PollEvent(&windowEvent)) {
       if (windowEvent.type == SDL_QUIT) break;
     }
+
+    vec2 m = canonical_mouse_pos();
+    printf("%f %f\n", m.x, m.y);
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
