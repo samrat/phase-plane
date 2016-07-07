@@ -14,8 +14,9 @@
 
 static int num_rows = 10;
 static int num_columns = 10;
-/* TODO: dynamically allocate this */
-static float points[100][4];
+/* TODO: dynamically allocate this.
+   NOTE: last point is for the cursor */
+static float points[101][4];
 
 typedef struct __vec2 {
   float x, y;
@@ -138,7 +139,7 @@ canonical_mouse_pos() {
   SDL_GetMouseState(&x, &y);
 
   result.x = 2*((float)x / WIDTH) - 1.0f;
-  result.y = 2*((float)y / HEIGHT) - 1.0f;
+  result.y = -(2*((float)y / HEIGHT) - 1.0f);
 
   return result;
 }
@@ -189,7 +190,15 @@ int main() {
     }
 
     vec2 m = canonical_mouse_pos();
-    printf("%f %f\n", m.x, m.y);
+    vec2 arrow = unit_vector(foo(m.x, m.y));
+
+    points[100][0] = m.x;
+    points[100][1] = m.y;
+    points[100][2] = arrow.x;
+    points[100][3] = arrow.y;
+
+    glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, (101*sizeof(points[0])), sizeof(points[0]), points);
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
