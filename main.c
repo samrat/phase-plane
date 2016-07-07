@@ -12,11 +12,14 @@
 #define WIDTH 800
 #define HEIGHT 600
 
-static int num_rows = 10;
-static int num_columns = 10;
-/* TODO: dynamically allocate this.
-   NOTE: last point is for the cursor */
-static float points[101][4];
+static int num_rows = 15;
+static int num_columns = 8;
+
+typedef struct {
+  float x, y, dirX, dirY;
+} point_vertex;
+
+static point_vertex *points;
 
 typedef struct __vec2 {
   float x, y;
@@ -159,6 +162,11 @@ int main() {
   glewExperimental = GL_TRUE;
   glewInit();
 
+  /* NOTE: last point is for the cursor */
+  int num_points = num_rows*num_columns+1;
+  size_t points_size = sizeof(point_vertex) * num_points;
+  points = malloc(points_size);
+
   /* Shaders and GLSL program */
   create_gl_resources();
 
@@ -173,15 +181,15 @@ int main() {
 
       int index = num_rows*i + j;
 
-      points[index][0] = start.x + ((float)i/num_rows);
-      points[index][1] = start.y + ((float)j/num_columns);
+      points[index].x = start.x + ((float)i/num_rows);
+      points[index].y = start.y + ((float)j/num_columns);
 
-      points[index][2] = arrow.x * 0.05;
-      points[index][3] = arrow.y * 0.05;
+      points[index].dirX = arrow.x * 0.05;
+      points[index].dirY = arrow.y * 0.05;
     }
   }
 
-  glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, points_size, points, GL_STATIC_DRAW);
 
   SDL_Event window_event;
   while (true) {
@@ -192,18 +200,18 @@ int main() {
     vec2 m = canonical_mouse_pos();
     vec2 arrow = unit_vector(foo(m.x, m.y));
 
-    points[100][0] = m.x;
-    points[100][1] = m.y;
-    points[100][2] = arrow.x;
-    points[100][3] = arrow.y;
+    points[num_points-1].x = m.x;
+    points[num_points-1].y = m.y;
+    points[num_points-1].dirX = arrow.x;
+    points[num_points-1].dirY = arrow.y;
 
-    glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
-    glBufferSubData(GL_ARRAY_BUFFER, (101*sizeof(points[0])), sizeof(points[0]), points);
+    /* TODO: Can I update just the data at points[num_points-1] ? */
+    glBufferSubData(GL_ARRAY_BUFFER, 0, points_size, points);
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glDrawArrays(GL_POINTS, 0, 800);
+    glDrawArrays(GL_POINTS, 0, num_points);
 
     SDL_GL_SwapWindow(window);
   }
