@@ -12,8 +12,8 @@
 #define WIDTH 800
 #define HEIGHT 600
 
-static int num_rows = 15;
-static int num_columns = 8;
+static int num_rows = 20;
+static int num_columns = 20;
 
 typedef struct {
   float x, y, dirX, dirY;
@@ -35,6 +35,9 @@ static struct {
   struct {
     GLint scale;
   } uniforms;
+
+  float minX, minY, maxX, maxY;
+  float scaleX, scaleY;
 } g_pplane_state;
 
 vec2
@@ -147,6 +150,24 @@ canonical_mouse_pos() {
   return result;
 }
 
+vec2
+real_to_canonical_coords(float x, float y) {
+  vec2 result;
+  result.x = x * g_pplane_state.scaleX;
+  result.y = y * g_pplane_state.scaleY;
+
+  return result;
+}
+
+vec2
+canonical_to_real_coords(float x, float y) {
+  vec2 result;
+  result.x = x / g_pplane_state.scaleX;
+  result.y = y / g_pplane_state.scaleY;
+
+  return result;
+}
+
 
 int main() {
   SDL_Init(SDL_INIT_EVERYTHING);
@@ -174,15 +195,28 @@ int main() {
 
   vec2 start = {-0.5, -0.5};
 
-  for (int i = 0; i < num_columns; i++) {
-    for (int j = 0; j < num_rows; j++) {
-      vec2 arrow = unit_vector(foo(start.x + ((float)i/num_rows),
-                                   start.y + ((float)j/num_columns)));
+  g_pplane_state.minX = -10.0;
+  g_pplane_state.minY = -10.0;
+  g_pplane_state.maxX = 10.0;
+  g_pplane_state.maxY = 10.0;
 
-      int index = num_rows*i + j;
+  g_pplane_state.scaleX = 2 / (g_pplane_state.maxX - g_pplane_state.minX);
+  g_pplane_state.scaleY = 2 / (g_pplane_state.maxY - g_pplane_state.minY);
 
-      points[index].x = start.x + ((float)i/num_rows);
-      points[index].y = start.y + ((float)j/num_columns);
+  float stepX = (g_pplane_state.maxX - g_pplane_state.minX) / num_rows;
+  float stepY = (g_pplane_state.maxY - g_pplane_state.minY) / num_columns;
+
+  int index = 0;
+  for (float i = g_pplane_state.minX;
+       i < g_pplane_state.maxX;
+       i += stepX) {
+    for (float j = g_pplane_state.minY;
+         j < g_pplane_state.maxY;
+         j += stepY) {
+      index += 1;
+      vec2 arrow = unit_vector(foo(i, j));
+      points[index].x = i * g_pplane_state.scaleX;
+      points[index].y = j * g_pplane_state.scaleY;
 
       points[index].dirX = arrow.x * 0.05;
       points[index].dirY = arrow.y * 0.05;
@@ -198,7 +232,7 @@ int main() {
     }
 
     vec2 m = canonical_mouse_pos();
-    vec2 arrow = unit_vector(foo(m.x, m.y));
+    vec2 arrow = unit_vector(foo(m.x/g_pplane_state.scaleX, m.y/g_pplane_state.scaleY));
 
     points[num_points-1].x = m.x;
     points[num_points-1].y = m.y;
