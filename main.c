@@ -14,6 +14,7 @@
 
 static int num_rows = 10;
 static int num_columns = 10;
+/* TODO: dynamically allocate this */
 static float points[100][4];
 
 typedef struct __vec2 {
@@ -181,10 +182,10 @@ int main() {
 
   glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
 
-  SDL_Event windowEvent;
+  SDL_Event window_event;
   while (true) {
-    if (SDL_PollEvent(&windowEvent)) {
-      if (windowEvent.type == SDL_QUIT) break;
+    if (SDL_PollEvent(&window_event)) {
+      if (window_event.type == SDL_QUIT) break;
     }
 
     vec2 m = canonical_mouse_pos();
