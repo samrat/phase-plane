@@ -67,3 +67,30 @@ const char* geometry_shader_src =
          EndPrimitive();
        }
        );
+
+
+const char* axes_vertex_shader_src =
+  GLSL(
+       in vec2 pos;
+
+       uniform vec2 scale_factor;
+
+       mat4 scale(float x, float y) {
+         return mat4(x, 0.0, 0.0, 0.0,
+                     0.0, y, 0.0, 0.0,
+                     0.0, 0.0, 1.0, 0.0,
+                     0.0, 0.0, 0.0, 1.0);
+       }
+
+       void main() {
+         gl_Position = scale(scale_factor.x, scale_factor.y) * vec4(pos, 0.0, 1.0);
+       }
+       );
+
+const char* axes_fragment_shader_src =
+  GLSL(
+       out vec4 outColor;
+       void main() {
+         outColor = vec4(1.0, 1.0, 1.0, 1.0);
+       }
+       );

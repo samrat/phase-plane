@@ -44,6 +44,21 @@ static struct {
 
   GLuint vao, vbo;
 
+  struct {
+    float endpoints[6][2];
+
+    GLuint vertex_shader, fragment_shader, shader_program;
+    GLuint vao, vbo;
+
+    struct {
+      GLint pos;
+    } attributes;
+
+    struct {
+      GLint scale;
+    } uniforms;
+  } axes;
+
   int num_points;
   size_t points_size;
 
@@ -96,7 +111,8 @@ show_info_log(GLuint object,
 }
 
 
-GLuint create_shader(GLenum type, const GLchar *src) {
+GLuint
+create_shader(GLenum type, const GLchar *src) {
   GLuint shader = glCreateShader(type);
   glShaderSource(shader, 1, &src, NULL);
   glCompileShader(shader);
@@ -152,6 +168,35 @@ create_gl_resources() {
 
   g_pplane_state.uniforms.scale = glGetUniformLocation(g_pplane_state.shader_program, "scale_factor");
 
+
+  /* Axes */
+  g_pplane_state.axes.vertex_shader = create_shader(GL_VERTEX_SHADER, axes_vertex_shader_src);
+  g_pplane_state.axes.fragment_shader = create_shader(GL_FRAGMENT_SHADER, axes_fragment_shader_src);
+  g_pplane_state.axes.shader_program = glCreateProgram();
+  glAttachShader(g_pplane_state.axes.shader_program, g_pplane_state.axes.vertex_shader);
+  glAttachShader(g_pplane_state.axes.shader_program, g_pplane_state.axes.fragment_shader);
+  glBindFragDataLocation(g_pplane_state.axes.shader_program, 0, "outColor");
+  glLinkProgram(g_pplane_state.axes.shader_program);
+  glUseProgram(g_pplane_state.axes.shader_program);
+
+  glGenVertexArrays(1, &g_pplane_state.axes.vao);
+  glBindVertexArray(g_pplane_state.axes.vao);
+
+  glGenBuffers(1, &g_pplane_state.axes.vbo);
+
+  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.axes.vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(g_pplane_state.axes.endpoints),
+               g_pplane_state.axes.endpoints, GL_STATIC_DRAW);
+
+  g_pplane_state.axes.attributes.pos =
+    glGetAttribLocation(g_pplane_state.axes.shader_program, "pos");
+  glEnableVertexAttribArray(g_pplane_state.axes.attributes.pos);
+  glVertexAttribPointer(g_pplane_state.axes.attributes.pos, 2, GL_FLOAT,
+                        GL_FALSE, 0, 0);
+  g_pplane_state.axes.uniforms.scale =
+    glGetUniformLocation(g_pplane_state.axes.shader_program, "scale_factor");
+
+  // glDisableVertexAttribArray(g_pplane_state.axes.attributes.pos);
   return 0;
 }
 
@@ -188,14 +233,22 @@ canonical_to_real_coords(float x, float y) {
 
 static void
 render() {
-  glBindVertexArray(g_pplane_state.vao);
-
   glUseProgram(g_pplane_state.shader_program);
+  glBindVertexArray(g_pplane_state.vao);
   glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.vbo);
 
   /* TODO: Can I update just the data at points[num_points-1] ? */
   glBufferSubData(GL_ARRAY_BUFFER, 0, g_pplane_state.points_size, points);
   glDrawArrays(GL_POINTS, 0, g_pplane_state.num_points);
+
+  /* Axes */
+  glUseProgram(g_pplane_state.axes.shader_program);
+  glBindVertexArray(g_pplane_state.axes.vao);
+  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.axes.vbo);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(g_pplane_state.axes.endpoints), g_pplane_state.axes.endpoints);
+  glUniform2f(g_pplane_state.axes.uniforms.scale, 1.0, 1.0);
+
+  glDrawArrays(GL_LINE_STRIP, 0, 6);
 
   nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
 }
@@ -276,6 +329,9 @@ int main() {
 
   /* Shaders and GLSL program */
   create_gl_resources();
+  glUseProgram(g_pplane_state.shader_program);
+  glBindVertexArray(g_pplane_state.vao);
+  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.vbo);
 
   glUniform2f(g_pplane_state.uniforms.scale, 1.0, 1.0);
 
@@ -324,6 +380,31 @@ int main() {
     /* TODO: Check whether bounds have changed before doing this.  */
     recompute_scale_and_translate();
     fill_plane_data();
+
+    /* Axes */
+    vec2 left = real_to_canonical_coords(g_pplane_state.minX, 0);
+    g_pplane_state.axes.endpoints[0][0] = left.x;
+    g_pplane_state.axes.endpoints[0][1] = left.y;
+
+    vec2 center = real_to_canonical_coords(0, 0);
+    g_pplane_state.axes.endpoints[1][0] = center.x;
+    g_pplane_state.axes.endpoints[1][1] = center.y;
+
+    vec2 top = real_to_canonical_coords(0, g_pplane_state.maxY);
+    g_pplane_state.axes.endpoints[2][0] = top.x;
+    g_pplane_state.axes.endpoints[2][1] = top.y;
+
+    vec2 bottom = real_to_canonical_coords(0, g_pplane_state.minY);
+    g_pplane_state.axes.endpoints[3][0] = bottom.x;
+    g_pplane_state.axes.endpoints[3][1] = bottom.y;
+
+    g_pplane_state.axes.endpoints[4][0] = center.x;
+    g_pplane_state.axes.endpoints[4][1] = center.y;
+
+    vec2 right = real_to_canonical_coords(g_pplane_state.maxX, 0);
+    g_pplane_state.axes.endpoints[5][0] = right.x;
+    g_pplane_state.axes.endpoints[5][1] = right.y;
+
 
     vec2 m = canonical_mouse_pos();
     vec2 real_m = canonical_to_real_coords(m.x, m.y);
