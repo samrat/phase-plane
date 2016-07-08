@@ -212,6 +212,33 @@ recompute_scale_and_translate() {
 
 }
 
+static void
+fill_plane_data() {
+  vec2 min = canonical_to_real_coords(-1.0, -1.0);
+  vec2 max = canonical_to_real_coords(1.0, 1.0);
+
+  float stepX = (max.x - min.x) / num_rows;
+  float stepY = (max.y - min.y) / num_columns;
+
+  int index = 0;
+  for (float i = min.x;
+       i < max.x;
+       i += stepX) {
+    for (float j = min.y;
+         j < max.y;
+         j += stepY) {
+      index += 1;
+      vec2 arrow = unit_vector(foo(i, j));
+      vec2 canon_coords = real_to_canonical_coords(i, j);
+      points[index].x = canon_coords.x;
+      points[index].y = canon_coords.y;
+
+      points[index].dirX = arrow.x * 0.05;
+      points[index].dirY = arrow.y * 0.05;
+    }
+  }
+}
+
 
 int main() {
   SDL_Init(SDL_INIT_EVERYTHING);
@@ -258,30 +285,7 @@ int main() {
   g_pplane_state.maxY = 10.0;
 
   recompute_scale_and_translate();
-
-  vec2 min = canonical_to_real_coords(-1.0, -1.0);
-  vec2 max = canonical_to_real_coords(1.0, 1.0);
-
-  float stepX = (max.x - min.x) / num_rows;
-  float stepY = (max.y - min.y) / num_columns;
-
-  int index = 0;
-  for (float i = min.x;
-       i < max.x;
-       i += stepX) {
-    for (float j = min.y;
-         j < max.y;
-         j += stepY) {
-      index += 1;
-      vec2 arrow = unit_vector(foo(i, j));
-      vec2 canon_coords = real_to_canonical_coords(i, j);
-      points[index].x = canon_coords.x;
-      points[index].y = canon_coords.y;
-
-      points[index].dirX = arrow.x * 0.05;
-      points[index].dirY = arrow.y * 0.05;
-    }
-  }
+  fill_plane_data();
 
   glBufferData(GL_ARRAY_BUFFER, g_pplane_state.points_size, points, GL_STATIC_DRAW);
 
@@ -295,52 +299,31 @@ int main() {
     nk_input_end(ctx);
 
     /* GUI */
-    {struct nk_panel layout;
+    {
+      struct nk_panel layout;
       if (nk_begin(ctx, &layout, "pplane", nk_rect(200, 200, 210, 350),
                    NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
-                   NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE))
-        {
-          nk_layout_row_dynamic(ctx, 25, 1);
-          nk_property_float(ctx, "x_min:", -100, &g_pplane_state.minX, 100, 10, 1);
+                   NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE)) {
+        nk_layout_row_dynamic(ctx, 25, 1);
+        nk_property_float(ctx, "x_min:", -100, &g_pplane_state.minX, 100, 10, 1);
 
-          nk_layout_row_dynamic(ctx, 25, 1);
-          nk_property_float(ctx, "x_max:", -100, &g_pplane_state.maxX, 100, 10, 1);
+        nk_layout_row_dynamic(ctx, 25, 1);
+        nk_property_float(ctx, "x_max:", -100, &g_pplane_state.maxX, 100, 10, 1);
 
 
-          nk_layout_row_dynamic(ctx, 25, 1);
-          nk_property_float(ctx, "y_min:", -100, &g_pplane_state.minY, 100, 10, 1);
+        nk_layout_row_dynamic(ctx, 25, 1);
+        nk_property_float(ctx, "y_min:", -100, &g_pplane_state.minY, 100, 10, 1);
 
-          nk_layout_row_dynamic(ctx, 25, 1);
-          nk_property_float(ctx, "y_max:", -100, &g_pplane_state.maxY, 100, 10, 1);
+        nk_layout_row_dynamic(ctx, 25, 1);
+        nk_property_float(ctx, "y_max:", -100, &g_pplane_state.maxY, 100, 10, 1);
 
-        }
-      nk_end(ctx);}
-
-    recompute_scale_and_translate();
-    vec2 min = canonical_to_real_coords(-1.0, -1.0);
-    vec2 max = canonical_to_real_coords(1.0, 1.0);
-
-    stepX = (max.x - min.x) / num_rows;
-    stepY = (max.y - min.y) / num_columns;
-
-    int index = 0;
-    for (float i = min.x;
-         i < max.x;
-         i += stepX) {
-      for (float j = min.y;
-           j < max.y;
-           j += stepY) {
-        index += 1;
-        vec2 arrow = unit_vector(foo(i, j));
-        vec2 canon_coords = real_to_canonical_coords(i, j);
-        points[index].x = canon_coords.x;
-        points[index].y = canon_coords.y;
-
-        points[index].dirX = arrow.x * 0.05;
-        points[index].dirY = arrow.y * 0.05;
       }
+      nk_end(ctx);
     }
 
+    /* TODO: Check whether bounds have changed before doing this.  */
+    recompute_scale_and_translate();
+    fill_plane_data();
 
     vec2 m = canonical_mouse_pos();
     vec2 real_m = canonical_to_real_coords(m.x, m.y);
