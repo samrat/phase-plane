@@ -38,6 +38,7 @@ static struct {
 
   float minX, minY, maxX, maxY;
   float scaleX, scaleY;
+  float translateX, translateY;
 } g_pplane_state;
 
 vec2
@@ -153,8 +154,8 @@ canonical_mouse_pos() {
 vec2
 real_to_canonical_coords(float x, float y) {
   vec2 result;
-  result.x = x * g_pplane_state.scaleX;
-  result.y = y * g_pplane_state.scaleY;
+  result.x = (x * g_pplane_state.scaleX) - g_pplane_state.translateX;
+  result.y = (y * g_pplane_state.scaleY) - g_pplane_state.translateY;
 
   return result;
 }
@@ -162,8 +163,8 @@ real_to_canonical_coords(float x, float y) {
 vec2
 canonical_to_real_coords(float x, float y) {
   vec2 result;
-  result.x = x / g_pplane_state.scaleX;
-  result.y = y / g_pplane_state.scaleY;
+  result.x = (x + g_pplane_state.translateX) / g_pplane_state.scaleX;
+  result.y = (y + g_pplane_state.translateY) / g_pplane_state.scaleY;
 
   return result;
 }
@@ -193,30 +194,37 @@ int main() {
 
   glUniform2f(g_pplane_state.uniforms.scale, 1.0, 1.0);
 
-  vec2 start = {-0.5, -0.5};
-
-  g_pplane_state.minX = -10.0;
-  g_pplane_state.minY = -10.0;
-  g_pplane_state.maxX = 10.0;
+  g_pplane_state.minX = -5.0;
+  g_pplane_state.minY = -20.0;
+  g_pplane_state.maxX = 20.0;
   g_pplane_state.maxY = 10.0;
 
-  g_pplane_state.scaleX = 2 / (g_pplane_state.maxX - g_pplane_state.minX);
-  g_pplane_state.scaleY = 2 / (g_pplane_state.maxY - g_pplane_state.minY);
+  g_pplane_state.scaleX = 2.0f / (g_pplane_state.maxX - g_pplane_state.minX);
+  g_pplane_state.scaleY = 2.0f / (g_pplane_state.maxY - g_pplane_state.minY);
+
+  g_pplane_state.translateX = 1.0f - (-g_pplane_state.minX /
+                                      (g_pplane_state.maxX - g_pplane_state.minX));
+  g_pplane_state.translateY = 1.0f - (-g_pplane_state.minY /
+                                      (g_pplane_state.maxY - g_pplane_state.minY));
+
+  vec2 min = canonical_to_real_coords(-1.0, -1.0);
+  vec2 max = canonical_to_real_coords(1.0, 1.0);
 
   float stepX = (g_pplane_state.maxX - g_pplane_state.minX) / num_rows;
   float stepY = (g_pplane_state.maxY - g_pplane_state.minY) / num_columns;
 
   int index = 0;
-  for (float i = g_pplane_state.minX;
-       i < g_pplane_state.maxX;
+  for (float i = min.x;
+       i < max.x;
        i += stepX) {
-    for (float j = g_pplane_state.minY;
-         j < g_pplane_state.maxY;
+    for (float j = min.y;
+         j < max.y;
          j += stepY) {
       index += 1;
       vec2 arrow = unit_vector(foo(i, j));
-      points[index].x = i * g_pplane_state.scaleX;
-      points[index].y = j * g_pplane_state.scaleY;
+      vec2 canon_coords = real_to_canonical_coords(i, j);
+      points[index].x = canon_coords.x;
+      points[index].y = canon_coords.y;
 
       points[index].dirX = arrow.x * 0.05;
       points[index].dirY = arrow.y * 0.05;
@@ -232,7 +240,8 @@ int main() {
     }
 
     vec2 m = canonical_mouse_pos();
-    vec2 arrow = unit_vector(foo(m.x/g_pplane_state.scaleX, m.y/g_pplane_state.scaleY));
+    vec2 real_m = canonical_to_real_coords(m.x, m.y);
+    vec2 arrow = unit_vector(foo(real_m.x, real_m.y));
 
     points[num_points-1].x = m.x;
     points[num_points-1].y = m.y;
