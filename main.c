@@ -196,6 +196,20 @@ render() {
   /* TODO: Can I update just the data at points[num_points-1] ? */
   glBufferSubData(GL_ARRAY_BUFFER, 0, g_pplane_state.points_size, points);
   glDrawArrays(GL_POINTS, 0, g_pplane_state.num_points);
+
+  nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
+}
+
+static void
+recompute_scale_and_translate() {
+  g_pplane_state.scaleX = 2.0f / (g_pplane_state.maxX - g_pplane_state.minX);
+  g_pplane_state.scaleY = 2.0f / (g_pplane_state.maxY - g_pplane_state.minY);
+
+  g_pplane_state.translateX = 1.0f - (-2*g_pplane_state.minX /
+                                      (g_pplane_state.maxX - g_pplane_state.minX));
+  g_pplane_state.translateY = 1.0f - (-2*g_pplane_state.minY /
+                                      (g_pplane_state.maxY - g_pplane_state.minY));
+
 }
 
 
@@ -243,19 +257,13 @@ int main() {
   g_pplane_state.maxX = 20.0;
   g_pplane_state.maxY = 10.0;
 
-  g_pplane_state.scaleX = 2.0f / (g_pplane_state.maxX - g_pplane_state.minX);
-  g_pplane_state.scaleY = 2.0f / (g_pplane_state.maxY - g_pplane_state.minY);
-
-  g_pplane_state.translateX = 1.0f - (-g_pplane_state.minX /
-                                      (g_pplane_state.maxX - g_pplane_state.minX));
-  g_pplane_state.translateY = 1.0f - (-g_pplane_state.minY /
-                                      (g_pplane_state.maxY - g_pplane_state.minY));
+  recompute_scale_and_translate();
 
   vec2 min = canonical_to_real_coords(-1.0, -1.0);
   vec2 max = canonical_to_real_coords(1.0, 1.0);
 
-  float stepX = (g_pplane_state.maxX - g_pplane_state.minX) / num_rows;
-  float stepY = (g_pplane_state.maxY - g_pplane_state.minY) / num_columns;
+  float stepX = (max.x - min.x) / num_rows;
+  float stepY = (max.y - min.y) / num_columns;
 
   int index = 0;
   for (float i = min.x;
@@ -286,24 +294,24 @@ int main() {
     }
     nk_input_end(ctx);
 
-            /* GUI */
+    /* GUI */
     {struct nk_panel layout;
-      if (nk_begin(ctx, &layout, "Demo", nk_rect(200, 200, 210, 350),
+      if (nk_begin(ctx, &layout, "pplane", nk_rect(200, 200, 210, 350),
                    NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
                    NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE))
         {
-          enum {EASY, HARD};
-          static int op = EASY;
-          static int property = 20;
-
-          nk_layout_row_static(ctx, 30, 80, 1);
-          if (nk_button_label(ctx, "button", NK_BUTTON_DEFAULT))
-            fprintf(stdout, "button pressed\n");
-          nk_layout_row_dynamic(ctx, 30, 2);
-          if (nk_option_label(ctx, "easy", op == EASY)) op = EASY;
-          if (nk_option_label(ctx, "hard", op == HARD)) op = HARD;
           nk_layout_row_dynamic(ctx, 25, 1);
-          nk_property_int(ctx, "Compression:", 0, &property, 100, 10, 1);
+          nk_property_float(ctx, "x_min:", -100, &g_pplane_state.minX, 100, 10, 1);
+
+          nk_layout_row_dynamic(ctx, 25, 1);
+          nk_property_float(ctx, "x_max:", -100, &g_pplane_state.maxX, 100, 10, 1);
+
+
+          nk_layout_row_dynamic(ctx, 25, 1);
+          nk_property_float(ctx, "y_min:", -100, &g_pplane_state.minY, 100, 10, 1);
+
+          nk_layout_row_dynamic(ctx, 25, 1);
+          nk_property_float(ctx, "y_max:", -100, &g_pplane_state.maxY, 100, 10, 1);
 
           {struct nk_panel combo;
             nk_layout_row_dynamic(ctx, 20, 1);
@@ -321,6 +329,32 @@ int main() {
             }}
         }
       nk_end(ctx);}
+
+    recompute_scale_and_translate();
+    vec2 min = canonical_to_real_coords(-1.0, -1.0);
+    vec2 max = canonical_to_real_coords(1.0, 1.0);
+
+    stepX = (max.x - min.x) / num_rows;
+    stepY = (max.y - min.y) / num_columns;
+
+    int index = 0;
+    for (float i = min.x;
+         i < max.x;
+         i += stepX) {
+      for (float j = min.y;
+           j < max.y;
+           j += stepY) {
+        index += 1;
+        vec2 arrow = unit_vector(foo(i, j));
+        vec2 canon_coords = real_to_canonical_coords(i, j);
+        points[index].x = canon_coords.x;
+        points[index].y = canon_coords.y;
+
+        points[index].dirX = arrow.x * 0.05;
+        points[index].dirY = arrow.y * 0.05;
+      }
+    }
+
 
     vec2 m = canonical_mouse_pos();
     vec2 real_m = canonical_to_real_coords(m.x, m.y);
@@ -341,18 +375,13 @@ int main() {
 
       render();
 
-
-      /* IMPORTANT: `nk_sdl_render` modifies some global OpenGL state
-       * with blending, scissor, face culling, depth test and viewport and
-       * defaults everything back into a default state.
-       * Make sure to either a.) save and restore or b.) reset your own state after
-       * rendering the UI. */
-      nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
       SDL_GL_SwapWindow(window);}
 
   }
 
+  nk_sdl_shutdown();
   SDL_GL_DeleteContext(context);
+  SDL_DestroyWindow(window);
   SDL_Quit();
   return 0;
 }
