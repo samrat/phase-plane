@@ -313,20 +313,6 @@ int main() {
           nk_layout_row_dynamic(ctx, 25, 1);
           nk_property_float(ctx, "y_max:", -100, &g_pplane_state.maxY, 100, 10, 1);
 
-          {struct nk_panel combo;
-            nk_layout_row_dynamic(ctx, 20, 1);
-            nk_label(ctx, "background:", NK_TEXT_LEFT);
-            nk_layout_row_dynamic(ctx, 25, 1);
-            if (nk_combo_begin_color(ctx, &combo, background, 400)) {
-              nk_layout_row_dynamic(ctx, 120, 1);
-              background = nk_color_picker(ctx, background, NK_RGBA);
-              nk_layout_row_dynamic(ctx, 25, 1);
-              background.r = (nk_byte)nk_propertyi(ctx, "#R:", 0, background.r, 255, 1,1);
-              background.g = (nk_byte)nk_propertyi(ctx, "#G:", 0, background.g, 255, 1,1);
-              background.b = (nk_byte)nk_propertyi(ctx, "#B:", 0, background.b, 255, 1,1);
-              background.a = (nk_byte)nk_propertyi(ctx, "#A:", 0, background.a, 255, 1,1);
-              nk_combo_end(ctx);
-            }}
         }
       nk_end(ctx);}
 
