@@ -7,10 +7,24 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 
+#define NK_INCLUDE_FIXED_TYPES
+#define NK_INCLUDE_STANDARD_IO
+#define NK_INCLUDE_DEFAULT_ALLOCATOR
+#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
+#define NK_INCLUDE_FONT_BAKING
+#define NK_INCLUDE_DEFAULT_FONT
+#define NK_IMPLEMENTATION
+#define NK_SDL_GL3_IMPLEMENTATION
+#include "nuklear.h"
+#include "nuklear_sdl_gl3.h"
+
 #include "shaders.c"
 
 #define WIDTH 800
 #define HEIGHT 600
+
+#define MAX_VERTEX_MEMORY 512 * 1024
+#define MAX_ELEMENT_MEMORY 128 * 1024
 
 static int num_rows = 20;
 static int num_columns = 20;
@@ -27,6 +41,11 @@ typedef struct __vec2 {
 
 static struct {
   GLuint vertex_shader, fragment_shader, geometry_shader, shader_program;
+
+  GLuint vao, vbo;
+
+  int num_points;
+  size_t points_size;
 
   struct {
     GLint pos, dir;
@@ -110,15 +129,13 @@ create_gl_resources() {
   glUseProgram(g_pplane_state.shader_program);
 
   // Create VAO
-  GLuint vao;
-  glGenVertexArrays(1, &vao);
-  glBindVertexArray(vao);
+  glGenVertexArrays(1, &g_pplane_state.vao);
+  glBindVertexArray(g_pplane_state.vao);
 
   /* Buffer data */
-  GLuint vbo;
-  glGenBuffers(1, &vbo);
+  glGenBuffers(1, &g_pplane_state.vbo);
 
-  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.vbo);
   glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
 
   // Specify layout of point data
@@ -169,6 +186,18 @@ canonical_to_real_coords(float x, float y) {
   return result;
 }
 
+static void
+render() {
+  glBindVertexArray(g_pplane_state.vao);
+
+  glUseProgram(g_pplane_state.shader_program);
+  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.vbo);
+
+  /* TODO: Can I update just the data at points[num_points-1] ? */
+  glBufferSubData(GL_ARRAY_BUFFER, 0, g_pplane_state.points_size, points);
+  glDrawArrays(GL_POINTS, 0, g_pplane_state.num_points);
+}
+
 
 int main() {
   SDL_Init(SDL_INIT_EVERYTHING);
@@ -180,14 +209,29 @@ int main() {
 
   SDL_Window* window = SDL_CreateWindow("pplane", 100, 100, WIDTH, HEIGHT, SDL_WINDOW_OPENGL);
   SDL_GLContext context = SDL_GL_CreateContext(window);
+  int win_width, win_height;
+  SDL_GetWindowSize(window, &win_width, &win_height);
 
   glewExperimental = GL_TRUE;
   glewInit();
 
+  /* GUI */
+  struct nk_context *ctx;
+  glViewport(0, 0, WIDTH, HEIGHT);
+  ctx = nk_sdl_init(window);
+
+  /* Load Fonts: if none of these are loaded a default font will be used  */
+  {struct nk_font_atlas *atlas;
+    nk_sdl_font_stash_begin(&atlas);
+    nk_sdl_font_stash_end();}
+
+  struct nk_color background = nk_rgb(28,48,62);
+
   /* NOTE: last point is for the cursor */
-  int num_points = num_rows*num_columns+1;
-  size_t points_size = sizeof(point_vertex) * num_points;
-  points = malloc(points_size);
+  g_pplane_state.num_points = num_rows*num_columns+1;
+  g_pplane_state.points_size = sizeof(point_vertex) *
+    g_pplane_state.num_points;
+  points = malloc(g_pplane_state.points_size);
 
   /* Shaders and GLSL program */
   create_gl_resources();
@@ -231,32 +275,81 @@ int main() {
     }
   }
 
-  glBufferData(GL_ARRAY_BUFFER, points_size, points, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, g_pplane_state.points_size, points, GL_STATIC_DRAW);
 
   SDL_Event window_event;
   while (true) {
+    nk_input_begin(ctx);
     if (SDL_PollEvent(&window_event)) {
       if (window_event.type == SDL_QUIT) break;
+      nk_sdl_handle_event(&window_event);
     }
+    nk_input_end(ctx);
+
+            /* GUI */
+    {struct nk_panel layout;
+      if (nk_begin(ctx, &layout, "Demo", nk_rect(200, 200, 210, 350),
+                   NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
+                   NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE))
+        {
+          enum {EASY, HARD};
+          static int op = EASY;
+          static int property = 20;
+
+          nk_layout_row_static(ctx, 30, 80, 1);
+          if (nk_button_label(ctx, "button", NK_BUTTON_DEFAULT))
+            fprintf(stdout, "button pressed\n");
+          nk_layout_row_dynamic(ctx, 30, 2);
+          if (nk_option_label(ctx, "easy", op == EASY)) op = EASY;
+          if (nk_option_label(ctx, "hard", op == HARD)) op = HARD;
+          nk_layout_row_dynamic(ctx, 25, 1);
+          nk_property_int(ctx, "Compression:", 0, &property, 100, 10, 1);
+
+          {struct nk_panel combo;
+            nk_layout_row_dynamic(ctx, 20, 1);
+            nk_label(ctx, "background:", NK_TEXT_LEFT);
+            nk_layout_row_dynamic(ctx, 25, 1);
+            if (nk_combo_begin_color(ctx, &combo, background, 400)) {
+              nk_layout_row_dynamic(ctx, 120, 1);
+              background = nk_color_picker(ctx, background, NK_RGBA);
+              nk_layout_row_dynamic(ctx, 25, 1);
+              background.r = (nk_byte)nk_propertyi(ctx, "#R:", 0, background.r, 255, 1,1);
+              background.g = (nk_byte)nk_propertyi(ctx, "#G:", 0, background.g, 255, 1,1);
+              background.b = (nk_byte)nk_propertyi(ctx, "#B:", 0, background.b, 255, 1,1);
+              background.a = (nk_byte)nk_propertyi(ctx, "#A:", 0, background.a, 255, 1,1);
+              nk_combo_end(ctx);
+            }}
+        }
+      nk_end(ctx);}
 
     vec2 m = canonical_mouse_pos();
     vec2 real_m = canonical_to_real_coords(m.x, m.y);
     vec2 arrow = unit_vector(foo(real_m.x, real_m.y));
 
-    points[num_points-1].x = m.x;
-    points[num_points-1].y = m.y;
-    points[num_points-1].dirX = arrow.x;
-    points[num_points-1].dirY = arrow.y;
+    points[g_pplane_state.num_points-1].x = m.x;
+    points[g_pplane_state.num_points-1].y = m.y;
+    points[g_pplane_state.num_points-1].dirX = arrow.x;
+    points[g_pplane_state.num_points-1].dirY = arrow.y;
 
-    /* TODO: Can I update just the data at points[num_points-1] ? */
-    glBufferSubData(GL_ARRAY_BUFFER, 0, points_size, points);
+    /* Draw */
+    {float bg[4];
+      nk_color_fv(bg, background);
+      SDL_GetWindowSize(window, &win_width, &win_height);
+      glViewport(0, 0, win_width, win_height);
+      glClear(GL_COLOR_BUFFER_BIT);
+      glClearColor(bg[0], bg[1], bg[2], bg[3]);
 
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+      render();
 
-    glDrawArrays(GL_POINTS, 0, num_points);
 
-    SDL_GL_SwapWindow(window);
+      /* IMPORTANT: `nk_sdl_render` modifies some global OpenGL state
+       * with blending, scissor, face culling, depth test and viewport and
+       * defaults everything back into a default state.
+       * Make sure to either a.) save and restore or b.) reset your own state after
+       * rendering the UI. */
+      nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
+      SDL_GL_SwapWindow(window);}
+
   }
 
   SDL_GL_DeleteContext(context);
