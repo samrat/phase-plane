@@ -90,7 +90,7 @@ static struct {
 } g_pplane_state;
 
 vec2
-foo(vec2 current) {
+diffeq_system(vec2 current) {
   float x = current.x;
   float y = current.y;
   vec2 result;
@@ -352,7 +352,7 @@ fill_plane_data() {
          j < max.y;
          j += stepY) {
       vec2 v = {.x = i, .y = j };
-      vec2 arrow = unit_vector(foo(v));
+      vec2 arrow = unit_vector(diffeq_system(v));
       vec2 canon_coords = real_to_canonical_coords(i, j);
       points[index].x = canon_coords.x;
       points[index].y = canon_coords.y;
@@ -487,7 +487,7 @@ int main() {
 
     vec2 m = canonical_mouse_pos();
     vec2 real_m = canonical_to_real_coords(m.x, m.y);
-    vec2 arrow = unit_vector(foo(real_m));
+    vec2 arrow = unit_vector(diffeq_system(real_m));
 
     points[g_pplane_state.num_points-1].x = m.x;
     points[g_pplane_state.num_points-1].y = m.y;
