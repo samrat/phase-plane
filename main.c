@@ -280,7 +280,6 @@ fill_plane_data() {
     for (float j = min.y;
          j < max.y;
          j += stepY) {
-      index += 1;
       vec2 arrow = unit_vector(foo(i, j));
       vec2 canon_coords = real_to_canonical_coords(i, j);
       points[index].x = canon_coords.x;
@@ -288,6 +287,8 @@ fill_plane_data() {
 
       points[index].dirX = arrow.x * 0.05;
       points[index].dirY = arrow.y * 0.05;
+
+      index += 1;
     }
   }
 }
