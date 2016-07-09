@@ -28,7 +28,7 @@
 #define MAX_VERTEX_MEMORY 512 * 1024
 #define MAX_ELEMENT_MEMORY 128 * 1024
 
-static const int num_rows = 10;
+static const int num_rows = 20;
 static const int num_columns = 20;
 
 typedef struct {
@@ -351,10 +351,6 @@ fill_plane_data() {
     for (float j = min.y;
          j < max.y;
          j += stepY) {
-      if (index >= 200) {
-        printf("%d\n", index);
-      }
-
       vec2 v = {.x = i, .y = j };
       vec2 arrow = unit_vector(foo(v));
       vec2 canon_coords = real_to_canonical_coords(i, j);
