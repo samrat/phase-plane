@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stdint.h>
 #include <math.h>
 
 #define GLEW_STATIC
@@ -19,6 +20,7 @@
 #include "nuklear_sdl_gl3.h"
 
 #include "shaders.c"
+#include "solver.c"
 
 #define WIDTH 800
 #define HEIGHT 600
@@ -26,18 +28,14 @@
 #define MAX_VERTEX_MEMORY 512 * 1024
 #define MAX_ELEMENT_MEMORY 128 * 1024
 
-static int num_rows = 20;
-static int num_columns = 20;
+static const int num_rows = 10;
+static const int num_columns = 20;
 
 typedef struct {
   float x, y, dirX, dirY;
 } point_vertex;
 
 static point_vertex *points;
-
-typedef struct __vec2 {
-  float x, y;
-} vec2;
 
 static struct {
   GLuint vertex_shader, fragment_shader, geometry_shader, shader_program;
@@ -59,7 +57,23 @@ static struct {
     } uniforms;
   } axes;
 
-  int num_points;
+  struct {
+    float solutions[10][800][2];
+
+    GLuint vertex_shader, fragment_shader, shader_program;
+    GLuint vao, vbo;
+
+    struct {
+      GLint pos;
+    } attributes;
+
+    struct {
+      GLint scale;
+    } uniforms;
+  } solutions;
+
+
+  int32_t num_points;
   size_t points_size;
 
   struct {
@@ -76,7 +90,9 @@ static struct {
 } g_pplane_state;
 
 vec2
-foo(float x, float y) {
+foo(vec2 current) {
+  float x = current.x;
+  float y = current.y;
   vec2 result;
   result.x = x*x + y;
   result.y = x - y;
@@ -131,7 +147,69 @@ create_shader(GLenum type, const GLchar *src) {
 }
 
 int
-create_gl_resources() {
+create_axes_gl_state() {
+  g_pplane_state.axes.vertex_shader = create_shader(GL_VERTEX_SHADER, axes_vertex_shader_src);
+  g_pplane_state.axes.fragment_shader = create_shader(GL_FRAGMENT_SHADER, axes_fragment_shader_src);
+  g_pplane_state.axes.shader_program = glCreateProgram();
+  glAttachShader(g_pplane_state.axes.shader_program, g_pplane_state.axes.vertex_shader);
+  glAttachShader(g_pplane_state.axes.shader_program, g_pplane_state.axes.fragment_shader);
+  glBindFragDataLocation(g_pplane_state.axes.shader_program, 0, "outColor");
+  glLinkProgram(g_pplane_state.axes.shader_program);
+  glUseProgram(g_pplane_state.axes.shader_program);
+
+  glGenVertexArrays(1, &g_pplane_state.axes.vao);
+  glBindVertexArray(g_pplane_state.axes.vao);
+
+  glGenBuffers(1, &g_pplane_state.axes.vbo);
+
+  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.axes.vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(g_pplane_state.axes.endpoints),
+               g_pplane_state.axes.endpoints, GL_STATIC_DRAW);
+
+  g_pplane_state.axes.attributes.pos =
+    glGetAttribLocation(g_pplane_state.axes.shader_program, "pos");
+  glEnableVertexAttribArray(g_pplane_state.axes.attributes.pos);
+  glVertexAttribPointer(g_pplane_state.axes.attributes.pos, 2, GL_FLOAT,
+                        GL_FALSE, 0, 0);
+  g_pplane_state.axes.uniforms.scale =
+    glGetUniformLocation(g_pplane_state.axes.shader_program, "scale_factor");
+
+  return 0;
+}
+
+int
+create_solutions_gl_state() {
+  g_pplane_state.solutions.vertex_shader = create_shader(GL_VERTEX_SHADER, axes_vertex_shader_src);
+  g_pplane_state.solutions.fragment_shader = create_shader(GL_FRAGMENT_SHADER, axes_fragment_shader_src);
+  g_pplane_state.solutions.shader_program = glCreateProgram();
+  glAttachShader(g_pplane_state.solutions.shader_program, g_pplane_state.solutions.vertex_shader);
+  glAttachShader(g_pplane_state.solutions.shader_program, g_pplane_state.solutions.fragment_shader);
+  glBindFragDataLocation(g_pplane_state.solutions.shader_program, 0, "outColor");
+  glLinkProgram(g_pplane_state.solutions.shader_program);
+  glUseProgram(g_pplane_state.solutions.shader_program);
+
+  glGenVertexArrays(1, &g_pplane_state.solutions.vao);
+  glBindVertexArray(g_pplane_state.solutions.vao);
+
+  glGenBuffers(1, &g_pplane_state.solutions.vbo);
+
+  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.solutions.vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(g_pplane_state.solutions.solutions),
+               g_pplane_state.solutions.solutions, GL_STATIC_DRAW);
+
+  g_pplane_state.solutions.attributes.pos =
+    glGetAttribLocation(g_pplane_state.solutions.shader_program, "pos");
+  glEnableVertexAttribArray(g_pplane_state.solutions.attributes.pos);
+  glVertexAttribPointer(g_pplane_state.solutions.attributes.pos, 2, GL_FLOAT,
+                        GL_FALSE, 0, 0);
+  g_pplane_state.solutions.uniforms.scale =
+    glGetUniformLocation(g_pplane_state.solutions.shader_program, "scale_factor");
+
+  return 0;
+}
+
+int
+create_plane_gl_resources() {
   g_pplane_state.vertex_shader = create_shader(GL_VERTEX_SHADER, vertex_shader_src);
   g_pplane_state.fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_src);
   g_pplane_state.geometry_shader = create_shader(GL_GEOMETRY_SHADER, geometry_shader_src);
@@ -168,35 +246,18 @@ create_gl_resources() {
 
   g_pplane_state.uniforms.scale = glGetUniformLocation(g_pplane_state.shader_program, "scale_factor");
 
+  return 0;
+}
 
+int
+create_gl_resources() {
+  /* Plane */
+  create_plane_gl_resources();
   /* Axes */
-  g_pplane_state.axes.vertex_shader = create_shader(GL_VERTEX_SHADER, axes_vertex_shader_src);
-  g_pplane_state.axes.fragment_shader = create_shader(GL_FRAGMENT_SHADER, axes_fragment_shader_src);
-  g_pplane_state.axes.shader_program = glCreateProgram();
-  glAttachShader(g_pplane_state.axes.shader_program, g_pplane_state.axes.vertex_shader);
-  glAttachShader(g_pplane_state.axes.shader_program, g_pplane_state.axes.fragment_shader);
-  glBindFragDataLocation(g_pplane_state.axes.shader_program, 0, "outColor");
-  glLinkProgram(g_pplane_state.axes.shader_program);
-  glUseProgram(g_pplane_state.axes.shader_program);
+  create_axes_gl_state();
+  /* Solutions */
+  create_solutions_gl_state();
 
-  glGenVertexArrays(1, &g_pplane_state.axes.vao);
-  glBindVertexArray(g_pplane_state.axes.vao);
-
-  glGenBuffers(1, &g_pplane_state.axes.vbo);
-
-  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.axes.vbo);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(g_pplane_state.axes.endpoints),
-               g_pplane_state.axes.endpoints, GL_STATIC_DRAW);
-
-  g_pplane_state.axes.attributes.pos =
-    glGetAttribLocation(g_pplane_state.axes.shader_program, "pos");
-  glEnableVertexAttribArray(g_pplane_state.axes.attributes.pos);
-  glVertexAttribPointer(g_pplane_state.axes.attributes.pos, 2, GL_FLOAT,
-                        GL_FALSE, 0, 0);
-  g_pplane_state.axes.uniforms.scale =
-    glGetUniformLocation(g_pplane_state.axes.shader_program, "scale_factor");
-
-  // glDisableVertexAttribArray(g_pplane_state.axes.attributes.pos);
   return 0;
 }
 
@@ -250,6 +311,16 @@ render() {
 
   glDrawArrays(GL_LINE_STRIP, 0, 6);
 
+  /* Solutions */
+  glUseProgram(g_pplane_state.solutions.shader_program);
+  glBindVertexArray(g_pplane_state.solutions.vao);
+  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.solutions.vbo);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(g_pplane_state.solutions.solutions), g_pplane_state.solutions.solutions);
+  glUniform2f(g_pplane_state.solutions.uniforms.scale, 1.0, 1.0);
+
+  glDrawArrays(GL_LINE_STRIP, 0, 800);
+
+
   nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
 }
 
@@ -280,7 +351,12 @@ fill_plane_data() {
     for (float j = min.y;
          j < max.y;
          j += stepY) {
-      vec2 arrow = unit_vector(foo(i, j));
+      if (index >= 200) {
+        printf("%d\n", index);
+      }
+
+      vec2 v = {.x = i, .y = j };
+      vec2 arrow = unit_vector(foo(v));
       vec2 canon_coords = real_to_canonical_coords(i, j);
       points[index].x = canon_coords.x;
       points[index].y = canon_coords.y;
@@ -415,12 +491,35 @@ int main() {
 
     vec2 m = canonical_mouse_pos();
     vec2 real_m = canonical_to_real_coords(m.x, m.y);
-    vec2 arrow = unit_vector(foo(real_m.x, real_m.y));
+    vec2 arrow = unit_vector(foo(real_m));
 
     points[g_pplane_state.num_points-1].x = m.x;
     points[g_pplane_state.num_points-1].y = m.y;
     points[g_pplane_state.num_points-1].dirX = arrow.x;
     points[g_pplane_state.num_points-1].dirY = arrow.y;
+
+    /* Solver test */
+    /* initial condition */
+    vec2 init = {.x = 2, .y = 2};
+    vec2 current = init;
+    float dt = -0.01;
+    for (int i = 400; i > 0; i--) {
+      vec2 current_canon = real_to_canonical_coords(current.x, current.y);
+      g_pplane_state.solutions.solutions[0][i][0] = current_canon.x;
+      g_pplane_state.solutions.solutions[0][i][1] = current_canon.y;
+      current = rk4(current, dt);
+    }
+
+    dt = 0.01;
+    current = init;
+    for (int i = 400; i < 800; i++) {
+      vec2 current_canon = real_to_canonical_coords(current.x, current.y);
+      g_pplane_state.solutions.solutions[0][i][0] = current_canon.x;
+      g_pplane_state.solutions.solutions[0][i][1] = current_canon.y;
+      current = rk4(current, dt);
+    }
+
+
 
     /* Draw */
     {float bg[4];
