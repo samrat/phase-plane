@@ -323,10 +323,16 @@ int main() {
   struct nk_color background = nk_rgb(28,48,62);
 
   /* NOTE: last point is for the cursor */
-  g_pplane_state.num_points = num_rows*num_columns+1;
+  g_pplane_state.num_points = num_rows*num_columns + 1;
   g_pplane_state.points_size = sizeof(point_vertex) *
     g_pplane_state.num_points;
-  points = malloc(g_pplane_state.points_size);
+
+  /* FIXME: when the bounds of the plane are changed,
+     `fill_plane_data` tries to fill in more points than
+     num_rows*num_columns. To account for that, I've allocated extra
+     storage. However, the real fix is to get rid of the extra
+     points. */
+  points = malloc(2*g_pplane_state.points_size);
 
   /* Shaders and GLSL program */
   create_gl_resources();
@@ -431,6 +437,7 @@ int main() {
   }
 
   nk_sdl_shutdown();
+  free(points);
   SDL_GL_DeleteContext(context);
   SDL_DestroyWindow(window);
   SDL_Quit();
