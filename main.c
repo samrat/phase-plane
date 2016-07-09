@@ -365,6 +365,44 @@ fill_plane_data() {
   }
 }
 
+static void
+fill_axes_data() {
+  vec2 left = real_to_canonical_coords(g_pplane_state.minX, 0);
+  g_pplane_state.axes.endpoints[0][0] = left.x;
+  g_pplane_state.axes.endpoints[0][1] = left.y;
+
+  vec2 center = real_to_canonical_coords(0, 0);
+  g_pplane_state.axes.endpoints[1][0] = center.x;
+  g_pplane_state.axes.endpoints[1][1] = center.y;
+
+  vec2 top = real_to_canonical_coords(0, g_pplane_state.maxY);
+  g_pplane_state.axes.endpoints[2][0] = top.x;
+  g_pplane_state.axes.endpoints[2][1] = top.y;
+
+  vec2 bottom = real_to_canonical_coords(0, g_pplane_state.minY);
+  g_pplane_state.axes.endpoints[3][0] = bottom.x;
+  g_pplane_state.axes.endpoints[3][1] = bottom.y;
+
+  g_pplane_state.axes.endpoints[4][0] = center.x;
+  g_pplane_state.axes.endpoints[4][1] = center.y;
+
+  vec2 right = real_to_canonical_coords(g_pplane_state.maxX, 0);
+  g_pplane_state.axes.endpoints[5][0] = right.x;
+  g_pplane_state.axes.endpoints[5][1] = right.y;
+}
+
+static void
+set_mouse_position() {
+  vec2 m = canonical_mouse_pos();
+  vec2 real_m = canonical_to_real_coords(m.x, m.y);
+  vec2 arrow = unit_vector(diffeq_system(real_m));
+
+  points[g_pplane_state.num_points-1].x = m.x;
+  points[g_pplane_state.num_points-1].y = m.y;
+  points[g_pplane_state.num_points-1].dirX = arrow.x;
+  points[g_pplane_state.num_points-1].dirY = arrow.y;
+}
+
 
 int main() {
   SDL_Init(SDL_INIT_EVERYTHING);
@@ -460,39 +498,8 @@ int main() {
     recompute_scale_and_translate();
     fill_plane_data();
 
-    /* Axes */
-    vec2 left = real_to_canonical_coords(g_pplane_state.minX, 0);
-    g_pplane_state.axes.endpoints[0][0] = left.x;
-    g_pplane_state.axes.endpoints[0][1] = left.y;
-
-    vec2 center = real_to_canonical_coords(0, 0);
-    g_pplane_state.axes.endpoints[1][0] = center.x;
-    g_pplane_state.axes.endpoints[1][1] = center.y;
-
-    vec2 top = real_to_canonical_coords(0, g_pplane_state.maxY);
-    g_pplane_state.axes.endpoints[2][0] = top.x;
-    g_pplane_state.axes.endpoints[2][1] = top.y;
-
-    vec2 bottom = real_to_canonical_coords(0, g_pplane_state.minY);
-    g_pplane_state.axes.endpoints[3][0] = bottom.x;
-    g_pplane_state.axes.endpoints[3][1] = bottom.y;
-
-    g_pplane_state.axes.endpoints[4][0] = center.x;
-    g_pplane_state.axes.endpoints[4][1] = center.y;
-
-    vec2 right = real_to_canonical_coords(g_pplane_state.maxX, 0);
-    g_pplane_state.axes.endpoints[5][0] = right.x;
-    g_pplane_state.axes.endpoints[5][1] = right.y;
-
-
-    vec2 m = canonical_mouse_pos();
-    vec2 real_m = canonical_to_real_coords(m.x, m.y);
-    vec2 arrow = unit_vector(diffeq_system(real_m));
-
-    points[g_pplane_state.num_points-1].x = m.x;
-    points[g_pplane_state.num_points-1].y = m.y;
-    points[g_pplane_state.num_points-1].dirX = arrow.x;
-    points[g_pplane_state.num_points-1].dirY = arrow.y;
+    fill_axes_data();
+    set_mouse_position();
 
     /* Solver test */
     /* initial condition */
@@ -514,7 +521,6 @@ int main() {
       g_pplane_state.solutions.solutions[0][i][1] = current_canon.y;
       current = rk4(current, dt);
     }
-
 
 
     /* Draw */
