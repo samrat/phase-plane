@@ -43,10 +43,6 @@ typedef struct {
 static point_vertex *points;
 
 static struct {
-  GLuint vertex_shader, fragment_shader, geometry_shader, shader_program;
-
-  GLuint vao, vbo;
-
   struct {
     float endpoints[6][2];
 
@@ -64,8 +60,8 @@ static struct {
 
   struct {
     int num_solutions;
-    /* TODO storage for solutions should get resized when necessary */
 
+    /* TODO storage for solutions should get resized when necessary */
     float solutions[MAX_SOLUTIONS][HALF_NUM_STEPS_PER_SOLUTION*2][2];
     float init[MAX_SOLUTIONS][2];
 
@@ -81,17 +77,23 @@ static struct {
     } uniforms;
   } solutions;
 
+  struct {
+    GLuint vertex_shader, fragment_shader, geometry_shader, shader_program;
+
+    GLuint vao, vbo;
+
+    struct {
+      GLint pos, dir;
+    } attributes;
+
+    struct {
+      GLint scale;
+    } uniforms;
+
+  } plane;
 
   int32_t num_points;
   size_t points_size;
-
-  struct {
-    GLint pos, dir;
-  } attributes;
-
-  struct {
-    GLint scale;
-  } uniforms;
 
   float minX, minY, maxX, maxY;
   float scaleX, scaleY;
@@ -219,41 +221,44 @@ create_solutions_gl_state() {
 
 int
 create_plane_gl_resources() {
-  g_pplane_state.vertex_shader = create_shader(GL_VERTEX_SHADER, vertex_shader_src);
-  g_pplane_state.fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_src);
-  g_pplane_state.geometry_shader = create_shader(GL_GEOMETRY_SHADER, geometry_shader_src);
+  g_pplane_state.plane.vertex_shader = create_shader(GL_VERTEX_SHADER, vertex_shader_src);
+  g_pplane_state.plane.fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_src);
+  g_pplane_state.plane.geometry_shader = create_shader(GL_GEOMETRY_SHADER, geometry_shader_src);
 
-  g_pplane_state.shader_program = glCreateProgram();
-  glAttachShader(g_pplane_state.shader_program, g_pplane_state.vertex_shader);
-  glAttachShader(g_pplane_state.shader_program, g_pplane_state.fragment_shader);
-  glAttachShader(g_pplane_state.shader_program, g_pplane_state.geometry_shader);
-  glBindFragDataLocation(g_pplane_state.shader_program, 0, "outColor");
-  glLinkProgram(g_pplane_state.shader_program);
-  glUseProgram(g_pplane_state.shader_program);
+  g_pplane_state.plane.shader_program = glCreateProgram();
+  glAttachShader(g_pplane_state.plane.shader_program, g_pplane_state.plane.vertex_shader);
+  glAttachShader(g_pplane_state.plane.shader_program, g_pplane_state.plane.fragment_shader);
+  glAttachShader(g_pplane_state.plane.shader_program, g_pplane_state.plane.geometry_shader);
+  glBindFragDataLocation(g_pplane_state.plane.shader_program, 0, "outColor");
+  glLinkProgram(g_pplane_state.plane.shader_program);
+  glUseProgram(g_pplane_state.plane.shader_program);
 
   // Create VAO
-  glGenVertexArrays(1, &g_pplane_state.vao);
-  glBindVertexArray(g_pplane_state.vao);
+  glGenVertexArrays(1, &g_pplane_state.plane.vao);
+  glBindVertexArray(g_pplane_state.plane.vao);
 
   /* Buffer data */
-  glGenBuffers(1, &g_pplane_state.vbo);
+  glGenBuffers(1, &g_pplane_state.plane.vbo);
 
-  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.plane.vbo);
   glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
 
   // Specify layout of point data
-  g_pplane_state.attributes.pos = glGetAttribLocation(g_pplane_state.shader_program, "pos");
-  glEnableVertexAttribArray(g_pplane_state.attributes.pos);
-  glVertexAttribPointer(g_pplane_state.attributes.pos, 2, GL_FLOAT,
+  g_pplane_state.plane.attributes.pos =
+    glGetAttribLocation(g_pplane_state.plane.shader_program, "pos");
+  glEnableVertexAttribArray(g_pplane_state.plane.attributes.pos);
+  glVertexAttribPointer(g_pplane_state.plane.attributes.pos, 2, GL_FLOAT,
                         GL_FALSE, 4*sizeof(float), 0);
 
-  g_pplane_state.attributes.dir = glGetAttribLocation(g_pplane_state.shader_program, "dir");
-  glEnableVertexAttribArray(g_pplane_state.attributes.dir);
-  glVertexAttribPointer(g_pplane_state.attributes.dir, 2, GL_FLOAT,
+  g_pplane_state.plane.attributes.dir =
+    glGetAttribLocation(g_pplane_state.plane.shader_program, "dir");
+  glEnableVertexAttribArray(g_pplane_state.plane.attributes.dir);
+  glVertexAttribPointer(g_pplane_state.plane.attributes.dir, 2, GL_FLOAT,
                         GL_FALSE, 4*sizeof(float),
                         (void*)(2*sizeof(float)));
 
-  g_pplane_state.uniforms.scale = glGetUniformLocation(g_pplane_state.shader_program, "scale_factor");
+  g_pplane_state.plane.uniforms.scale =
+    glGetUniformLocation(g_pplane_state.plane.shader_program, "scale_factor");
 
   return 0;
 }
@@ -303,9 +308,9 @@ canonical_to_real_coords(float x, float y) {
 
 static void
 render() {
-  glUseProgram(g_pplane_state.shader_program);
-  glBindVertexArray(g_pplane_state.vao);
-  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.vbo);
+  glUseProgram(g_pplane_state.plane.shader_program);
+  glBindVertexArray(g_pplane_state.plane.vao);
+  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.plane.vbo);
 
   /* TODO: Can I update just the data at points[num_points-1] ? */
   glBufferSubData(GL_ARRAY_BUFFER, 0, g_pplane_state.points_size, points);
@@ -478,11 +483,11 @@ int main(int argc, char *argv[]) {
 
   /* Shaders and GLSL program */
   create_gl_resources();
-  glUseProgram(g_pplane_state.shader_program);
-  glBindVertexArray(g_pplane_state.vao);
-  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.vbo);
+  glUseProgram(g_pplane_state.plane.shader_program);
+  glBindVertexArray(g_pplane_state.plane.vao);
+  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.plane.vbo);
 
-  glUniform2f(g_pplane_state.uniforms.scale, 1.0, 1.0);
+  glUniform2f(g_pplane_state.plane.uniforms.scale, 1.0, 1.0);
 
   g_pplane_state.minX = -5.0;
   g_pplane_state.minY = -20.0;
