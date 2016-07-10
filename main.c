@@ -508,7 +508,7 @@ int main(int argc, char *argv[]) {
     vec2 init = {.x = 2, .y = 2};
     vec2 current = init;
     float dt = -0.01;
-    for (int i = 400; i > 0; i--) {
+    for (int i = 400; i >= 0; i--) {
       vec2 current_canon = real_to_canonical_coords(current.x, current.y);
       g_pplane_state.solutions.solutions[0][i][0] = current_canon.x;
       g_pplane_state.solutions.solutions[0][i][1] = current_canon.y;
