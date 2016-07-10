@@ -27,6 +27,12 @@
 #define MAX_VERTEX_MEMORY 512 * 1024
 #define MAX_ELEMENT_MEMORY 128 * 1024
 
+/* TODO: These will become configurable from the UI */
+#define HALF_NUM_STEPS_PER_SOLUTION 800
+#define SOLUTION_DT 0.01f
+
+#define MAX_SOLUTIONS 20
+
 static const int num_rows = 20;
 static const int num_columns = 20;
 
@@ -57,7 +63,11 @@ static struct {
   } axes;
 
   struct {
-    float solutions[10][800][2];
+    int num_solutions;
+    /* TODO storage for solutions should get resized when necessary */
+
+    float solutions[MAX_SOLUTIONS][HALF_NUM_STEPS_PER_SOLUTION*2][2];
+    float init[MAX_SOLUTIONS][2];
 
     GLuint vertex_shader, fragment_shader, shader_program;
     GLuint vao, vbo;
@@ -313,12 +323,14 @@ render() {
   /* Solutions */
   glUseProgram(g_pplane_state.solutions.shader_program);
   glBindVertexArray(g_pplane_state.solutions.vao);
+
   glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.solutions.vbo);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(g_pplane_state.solutions.solutions), g_pplane_state.solutions.solutions);
-  glUniform2f(g_pplane_state.solutions.uniforms.scale, 1.0, 1.0);
 
-  glDrawArrays(GL_LINE_STRIP, 0, 800);
-
+  for (int i = 0; i < g_pplane_state.solutions.num_solutions; i++) {
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(g_pplane_state.solutions.solutions[i]), g_pplane_state.solutions.solutions[i]);
+    glUniform2f(g_pplane_state.solutions.uniforms.scale, 1.0, 1.0);
+    glDrawArrays(GL_LINE_STRIP, 0, 2*HALF_NUM_STEPS_PER_SOLUTION);
+  }
 
   nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
 }
@@ -402,6 +414,22 @@ set_mouse_position() {
   points[g_pplane_state.num_points-1].dirY = arrow.y;
 }
 
+static void
+handle_event(SDL_Event *event) {
+  /* TODO: ignore mouse clicks on Nuklear GUI */
+  if (event->type == SDL_MOUSEBUTTONDOWN) {
+    int solutions_idx = g_pplane_state.solutions.num_solutions;
+
+    vec2 canon_init = canonical_mouse_pos();
+    vec2 real_init = canonical_to_real_coords(canon_init.x,
+                                              canon_init.y);
+    g_pplane_state.solutions.init[solutions_idx][0] = real_init.x;
+    g_pplane_state.solutions.init[solutions_idx][1] = real_init.y;
+
+    g_pplane_state.solutions.num_solutions += 1;
+  }
+}
+
 
 int main(int argc, char *argv[]) {
   SDL_Init(SDL_INIT_EVERYTHING);
@@ -420,6 +448,8 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "GL3W: failed to initialize\n");
     return 1;
   }
+
+  g_pplane_state.solutions.num_solutions = 0;
 
 
   /* GUI */
@@ -469,6 +499,7 @@ int main(int argc, char *argv[]) {
     nk_input_begin(ctx);
     if (SDL_PollEvent(&window_event)) {
       if (window_event.type == SDL_QUIT) break;
+      handle_event(&window_event);
       nk_sdl_handle_event(&window_event);
     }
     nk_input_end(ctx);
@@ -504,26 +535,32 @@ int main(int argc, char *argv[]) {
     set_mouse_position();
 
     /* Solver test */
-    /* initial condition */
-    vec2 init = {.x = 2, .y = 2};
-    vec2 current = init;
-    float dt = -0.01;
-    for (int i = 400; i >= 0; i--) {
-      vec2 current_canon = real_to_canonical_coords(current.x, current.y);
-      g_pplane_state.solutions.solutions[0][i][0] = current_canon.x;
-      g_pplane_state.solutions.solutions[0][i][1] = current_canon.y;
-      current = rk4(current, dt);
-    }
+    /* TODO- Add a check to re-fill solutions buffer only when
+       necessary */
+    for (int c = 0; c < g_pplane_state.solutions.num_solutions; c++) {
+      vec2 current;
+      current.x = g_pplane_state.solutions.init[c][0];
+      current.y = g_pplane_state.solutions.init[c][1];
 
-    dt = 0.01;
-    current = init;
-    for (int i = 400; i < 800; i++) {
-      vec2 current_canon = real_to_canonical_coords(current.x, current.y);
-      g_pplane_state.solutions.solutions[0][i][0] = current_canon.x;
-      g_pplane_state.solutions.solutions[0][i][1] = current_canon.y;
-      current = rk4(current, dt);
-    }
+      float dt = -SOLUTION_DT;
+      for (int i = HALF_NUM_STEPS_PER_SOLUTION; i >= 0; i--) {
+        vec2 current_canon = real_to_canonical_coords(current.x, current.y);
+        g_pplane_state.solutions.solutions[c][i][0] = current_canon.x;
+        g_pplane_state.solutions.solutions[c][i][1] = current_canon.y;
+        current = rk4(current, dt);
+      }
 
+      dt = SOLUTION_DT;
+      current.x = g_pplane_state.solutions.init[c][0];
+      current.y = g_pplane_state.solutions.init[c][1];
+
+      for (int i = HALF_NUM_STEPS_PER_SOLUTION; i < 2*HALF_NUM_STEPS_PER_SOLUTION; i++) {
+        vec2 current_canon = real_to_canonical_coords(current.x, current.y);
+        g_pplane_state.solutions.solutions[c][i][0] = current_canon.x;
+        g_pplane_state.solutions.solutions[c][i][1] = current_canon.y;
+        current = rk4(current, dt);
+      }
+    }
 
     /* Draw */
     {float bg[4];
