@@ -62,6 +62,7 @@ static struct {
 
   struct {
     int num_solutions;
+    bool recompute_solutions;
 
     /* TODO storage for solutions should get resized when necessary */
     float solutions[MAX_SOLUTIONS][HALF_NUM_STEPS_PER_SOLUTION*2][2];
@@ -439,6 +440,7 @@ handle_event(SDL_Event *event) {
     g_pplane_state.solutions.init[solutions_idx][1] = real_init.y;
 
     g_pplane_state.solutions.num_solutions += 1;
+    g_pplane_state.solutions.recompute_solutions = true;
   }
 }
 
@@ -514,8 +516,8 @@ int main(int argc, char *argv[]) {
     nk_input_begin(ctx);
     if (SDL_PollEvent(&window_event)) {
       if (window_event.type == SDL_QUIT) break;
-      handle_event(&window_event);
       nk_sdl_handle_event(&window_event);
+      handle_event(&window_event);
     }
     nk_input_end(ctx);
 
@@ -525,18 +527,35 @@ int main(int argc, char *argv[]) {
       if (nk_begin(ctx, &layout, "pplane", nk_rect(200, 200, 210, 350),
                    NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
                    NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE)) {
+        static float minX = -5.0;
+        static float minY = -20.0;
+        static float maxX = 20.0;
+        static float maxY = 10.0;
         nk_layout_row_dynamic(ctx, 25, 1);
-        nk_property_float(ctx, "x_min:", -100, &g_pplane_state.minX, 100, 10, 1);
+        nk_property_float(ctx, "x_min:", -100, &minX, 100, 10, 1);
 
         nk_layout_row_dynamic(ctx, 25, 1);
-        nk_property_float(ctx, "x_max:", -100, &g_pplane_state.maxX, 100, 10, 1);
+        nk_property_float(ctx, "x_max:", -100, &maxX, 100, 10, 1);
 
 
         nk_layout_row_dynamic(ctx, 25, 1);
-        nk_property_float(ctx, "y_min:", -100, &g_pplane_state.minY, 100, 10, 1);
+        nk_property_float(ctx, "y_min:", -100, &minY, 100, 10, 1);
 
         nk_layout_row_dynamic(ctx, 25, 1);
-        nk_property_float(ctx, "y_max:", -100, &g_pplane_state.maxY, 100, 10, 1);
+        nk_property_float(ctx, "y_max:", -100, &maxY, 100, 10, 1);
+
+        if (nk_button_label(ctx, "Apply changes", NK_BUTTON_DEFAULT)) {
+          g_pplane_state.solutions.recompute_solutions = true;
+          g_pplane_state.minX = minX;
+          g_pplane_state.maxX = maxX;
+
+          g_pplane_state.minY = minY;
+          g_pplane_state.maxY = maxY;
+        }
+
+        if (nk_button_label(ctx, "Clear solutions", NK_BUTTON_DEFAULT)) {
+          g_pplane_state.solutions.num_solutions = 0;
+        }
 
       }
       nk_end(ctx);
@@ -580,29 +599,32 @@ int main(int argc, char *argv[]) {
     /* Solver test */
     /* TODO- Add a check to re-fill solutions buffer only when
        necessary */
-    for (int c = 0; c < g_pplane_state.solutions.num_solutions; c++) {
-      vec2 current;
-      current.x = g_pplane_state.solutions.init[c][0];
-      current.y = g_pplane_state.solutions.init[c][1];
+    if (g_pplane_state.solutions.recompute_solutions) {
+      for (int c = 0; c < g_pplane_state.solutions.num_solutions; c++) {
+        vec2 current;
+        current.x = g_pplane_state.solutions.init[c][0];
+        current.y = g_pplane_state.solutions.init[c][1];
 
-      float dt = -SOLUTION_DT;
-      for (int i = HALF_NUM_STEPS_PER_SOLUTION; i >= 0; i--) {
-        vec2 current_canon = real_to_canonical_coords(current.x, current.y);
-        g_pplane_state.solutions.solutions[c][i][0] = current_canon.x;
-        g_pplane_state.solutions.solutions[c][i][1] = current_canon.y;
-        current = rk4(current, dt);
+        float dt = -SOLUTION_DT;
+        for (int i = HALF_NUM_STEPS_PER_SOLUTION; i >= 0; i--) {
+          vec2 current_canon = real_to_canonical_coords(current.x, current.y);
+          g_pplane_state.solutions.solutions[c][i][0] = current_canon.x;
+          g_pplane_state.solutions.solutions[c][i][1] = current_canon.y;
+          current = rk4(current, dt);
+        }
+
+        dt = SOLUTION_DT;
+        current.x = g_pplane_state.solutions.init[c][0];
+        current.y = g_pplane_state.solutions.init[c][1];
+
+        for (int i = HALF_NUM_STEPS_PER_SOLUTION; i < 2*HALF_NUM_STEPS_PER_SOLUTION; i++) {
+          vec2 current_canon = real_to_canonical_coords(current.x, current.y);
+          g_pplane_state.solutions.solutions[c][i][0] = current_canon.x;
+          g_pplane_state.solutions.solutions[c][i][1] = current_canon.y;
+          current = rk4(current, dt);
+        }
       }
-
-      dt = SOLUTION_DT;
-      current.x = g_pplane_state.solutions.init[c][0];
-      current.y = g_pplane_state.solutions.init[c][1];
-
-      for (int i = HALF_NUM_STEPS_PER_SOLUTION; i < 2*HALF_NUM_STEPS_PER_SOLUTION; i++) {
-        vec2 current_canon = real_to_canonical_coords(current.x, current.y);
-        g_pplane_state.solutions.solutions[c][i][0] = current_canon.x;
-        g_pplane_state.solutions.solutions[c][i][1] = current_canon.y;
-        current = rk4(current, dt);
-      }
+      g_pplane_state.solutions.recompute_solutions = false;
     }
 
     /* Draw */
