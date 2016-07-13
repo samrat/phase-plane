@@ -547,15 +547,15 @@ int main(int argc, char *argv[]) {
       if (nk_begin(ctx, &layout2, "System", nk_rect(250, 200, 210, 200),
                    NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
                    NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE)) {
-        int xlen;
-        char xbuffer[128];
+        static int xlen = 5;
+        static char xbuffer[128] = "x*x+y";
         nk_layout_row_dynamic(ctx, 25, 1);
         nk_edit_string(ctx, NK_EDIT_SIMPLE, xbuffer, &xlen, 128, nk_filter_ascii);
         xbuffer[xlen] = 0;
         printf("x = %s\n", xtest);
 
-        int ylen;
-        char ybuffer[128];
+        static int ylen = 3;
+        static char ybuffer[128] = "x-y";
 
         nk_layout_row_dynamic(ctx, 25, 1);
         nk_edit_string(ctx, NK_EDIT_SIMPLE, ybuffer, &ylen, 128, nk_filter_ascii);
