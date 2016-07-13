@@ -20,6 +20,8 @@
 
 #include "shaders.c"
 #include "solver.c"
+#include "interpreter.c"
+
 
 #define WIDTH 800
 #define HEIGHT 600
@@ -102,11 +104,16 @@ static struct {
 
 vec2
 diffeq_system(vec2 current) {
-  float x = current.x;
-  float y = current.y;
   vec2 result;
-  result.x = x*x + y;
-  result.y = x - y;
+
+  env.x = current.x;
+  env.y = current.y;
+  look = &xtest[0];
+
+  result.x = expression();
+
+  look = &ytest[0];
+  result.y = expression();
 
   return result;
 }
@@ -435,8 +442,11 @@ handle_event(SDL_Event *event) {
   }
 }
 
-
 int main(int argc, char *argv[]) {
+  env.x = 2.3;
+  env.y = 1.0;
+  printf("%f\n", expression());
+
   SDL_Init(SDL_INIT_EVERYTHING);
 
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -528,6 +538,34 @@ int main(int argc, char *argv[]) {
         nk_layout_row_dynamic(ctx, 25, 1);
         nk_property_float(ctx, "y_max:", -100, &g_pplane_state.maxY, 100, 10, 1);
 
+      }
+      nk_end(ctx);
+
+      /* Diffeq. System Editor */
+      /* TODO: How do I show the default system? */
+      struct nk_panel layout2;
+      if (nk_begin(ctx, &layout2, "System", nk_rect(250, 200, 210, 200),
+                   NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
+                   NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE)) {
+        int xlen;
+        char xbuffer[128];
+        nk_layout_row_dynamic(ctx, 25, 1);
+        nk_edit_string(ctx, NK_EDIT_SIMPLE, xbuffer, &xlen, 128, nk_filter_ascii);
+        xbuffer[xlen] = 0;
+        printf("x = %s\n", xtest);
+
+        int ylen;
+        char ybuffer[128];
+
+        nk_layout_row_dynamic(ctx, 25, 1);
+        nk_edit_string(ctx, NK_EDIT_SIMPLE, ybuffer, &ylen, 128, nk_filter_ascii);
+        ybuffer[ylen] = 0;
+        printf("y = %s\n", ytest);
+
+        if (nk_button_label(ctx, "Apply", NK_BUTTON_DEFAULT)) {
+          snprintf(xtest, 128, "%s", xbuffer);
+          snprintf(ytest, 128, "%s", ybuffer);
+        }
       }
       nk_end(ctx);
     }
