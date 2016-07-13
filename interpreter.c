@@ -57,12 +57,19 @@ bool is_addop(char c) {
   return false;
 }
 
-int get_num() {
-  if (!is_digit(*look)) {
-    expected("integer");
+float get_num() {
+  if (!(is_digit(*look) || *look == '-')) {
+    expected("float");
   }
-  int ret = *look - '0';
-  get_char();
+
+  char buf[16];
+  int i = 0;
+  while (is_digit(*look) || *look == '.') {
+    buf[i++] = *look;
+    get_char();
+  }
+  buf[i] = 0;
+  float ret = atof(buf);
   return ret;
 }
 
@@ -76,7 +83,12 @@ char get_name() {
 
 float factor() {
   float value;
+  float sign = 1.0;
   /* TODO other cases(paren-ed exprs, idents) */
+  if (*look == '-') {
+    sign = -1;
+  }
+
   if (is_alpha(*look)) {
     switch (*look) {
     case 'x': {
@@ -91,7 +103,7 @@ float factor() {
   else {
     value = get_num();
   }
-  return value;
+  return sign*value;
 }
 
 float term() {
