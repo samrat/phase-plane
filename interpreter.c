@@ -1,3 +1,13 @@
+/* TODO:
+   - Handle floating point constants
+
+   - Handle identifiers other than x and y. Q: These will be user-set
+     parameters. How will they set it?
+
+   - Avoid reading the string at each run? How?
+ */
+
+
 char xtest[128] = "x*x+y";
 char ytest[128] = "x-y";
 
