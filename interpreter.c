@@ -1,15 +1,17 @@
 /* TODO:
-   - Handle floating point constants
-
    - Handle identifiers other than x and y. Q: These will be user-set
      parameters. How will they set it?
 
    - Avoid reading the string at each run? How?
+
  */
 
+float expression();
 
 char xtest[128] = "x*x+y";
 char ytest[128] = "x-y";
+
+char tmp[32];
 
 char *look = &xtest[0];
 
@@ -34,7 +36,10 @@ void match(char x) {
   if (*look == x) {
     get_char();
   }
-  else expected("FIXME");
+  else {
+    snprintf(tmp, 32, "%c", x);
+    expected(tmp);
+  }
 }
 
 bool is_alpha(char c) {
@@ -84,12 +89,18 @@ char get_name() {
 float factor() {
   float value;
   float sign = 1.0;
-  /* TODO other cases(paren-ed exprs, idents) */
+
   if (*look == '-') {
     sign = -1;
   }
 
-  if (is_alpha(*look)) {
+  if (*look == '(') {
+    match('(');
+    value = expression();
+    match(')');
+    return value;
+  }
+  else if (is_alpha(*look)) {
     switch (*look) {
     case 'x': {
       value = env.x;
