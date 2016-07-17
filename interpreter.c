@@ -4,9 +4,11 @@
 
    - Avoid reading the string at each run? How?
 
+   - Handle trig. functions
  */
 
 float expression();
+void skip_white();
 
 char xtest[128] = "x*x+y";
 char ytest[128] = "x-y";
@@ -35,6 +37,7 @@ void expected(char *s) {
 void match(char x) {
   if (*look == x) {
     get_char();
+    skip_white();
   }
   else {
     snprintf(tmp, 32, "%c", x);
@@ -56,6 +59,15 @@ bool is_digit(char c) {
   return false;
 }
 
+bool is_white(char c) {
+  return (c == ' ');
+}
+
+void skip_white() {
+  while (is_white(*look))
+    get_char();
+}
+
 bool is_addop(char c) {
   if (c == '+' || c == '-')
     return true;
@@ -74,6 +86,7 @@ float get_num() {
     get_char();
   }
   buf[i] = 0;
+  skip_white();
   float ret = atof(buf);
   return ret;
 }
@@ -83,6 +96,7 @@ char get_name() {
     expected("name");
   char ret = *look;
   get_char();
+  skip_white();
   return ret;
 }
 
@@ -110,6 +124,7 @@ float factor() {
     } break;
     }
     get_char();
+    skip_white();
   }
   else {
     value = get_num();
