@@ -2,7 +2,7 @@
 
 A program for phase plane analysis. **This is a work-in-progress.**
 
-![phase-plane screenshot](http://i.imgur.com/AmzXFsz.png)
+![phase-plane screenshot](http://i.imgur.com/LOFyhu9.png)
 
 ## Building
 
