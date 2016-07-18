@@ -18,6 +18,7 @@
 #include "nuklear.h"
 #include "nuklear_sdl_gl3.h"
 
+#include "pplane.h"
 #include "shaders.c"
 #include "solver.c"
 #include "interpreter.c"
@@ -29,79 +30,8 @@
 #define MAX_VERTEX_MEMORY 512 * 1024
 #define MAX_ELEMENT_MEMORY 128 * 1024
 
-/* TODO: These will become configurable from the UI */
-#define HALF_NUM_STEPS_PER_SOLUTION 800
-#define SOLUTION_DT 0.01f
-
-#define MAX_SOLUTIONS 20
-
 static const int num_rows = 20;
 static const int num_columns = 20;
-
-typedef struct {
-  float x, y, dirX, dirY;
-} point_vertex;
-
-static point_vertex *points;
-
-static struct {
-  struct {
-    float endpoints[6][2];
-
-    GLuint vertex_shader, fragment_shader, shader_program;
-    GLuint vao, vbo;
-
-    struct {
-      GLint pos;
-    } attributes;
-
-    struct {
-      GLint scale;
-    } uniforms;
-  } axes;
-
-  struct {
-    int num_solutions;
-    bool recompute_solutions;
-
-    /* TODO storage for solutions should get resized when necessary */
-    float solutions[MAX_SOLUTIONS][HALF_NUM_STEPS_PER_SOLUTION*2][2];
-    float init[MAX_SOLUTIONS][2];
-
-    GLuint vertex_shader, fragment_shader, shader_program;
-    GLuint vao, vbo;
-
-    struct {
-      GLint pos;
-    } attributes;
-
-    struct {
-      GLint scale;
-    } uniforms;
-  } solutions;
-
-  struct {
-    GLuint vertex_shader, fragment_shader, geometry_shader, shader_program;
-
-    GLuint vao, vbo;
-
-    struct {
-      GLint pos, dir;
-    } attributes;
-
-    struct {
-      GLint scale;
-    } uniforms;
-
-  } plane;
-
-  int32_t num_points;
-  size_t points_size;
-
-  float minX, minY, maxX, maxY;
-  float scaleX, scaleY;
-  float translateX, translateY;
-} g_pplane_state;
 
 vec2
 diffeq_system(vec2 current) {
@@ -166,119 +96,122 @@ create_shader(GLenum type, const GLchar *src) {
 }
 
 int
-create_axes_gl_state() {
-  g_pplane_state.axes.vertex_shader = create_shader(GL_VERTEX_SHADER, axes_vertex_shader_src);
-  g_pplane_state.axes.fragment_shader = create_shader(GL_FRAGMENT_SHADER, axes_fragment_shader_src);
-  g_pplane_state.axes.shader_program = glCreateProgram();
-  glAttachShader(g_pplane_state.axes.shader_program, g_pplane_state.axes.vertex_shader);
-  glAttachShader(g_pplane_state.axes.shader_program, g_pplane_state.axes.fragment_shader);
-  glBindFragDataLocation(g_pplane_state.axes.shader_program, 0, "outColor");
-  glLinkProgram(g_pplane_state.axes.shader_program);
-  glUseProgram(g_pplane_state.axes.shader_program);
+create_axes_gl_state(pplane_state_t *pplane_state) {
+  gl_state_t *gl_state = pplane_state->gl_state;
+  gl_state->axes.vertex_shader = create_shader(GL_VERTEX_SHADER, axes_vertex_shader_src);
+  gl_state->axes.fragment_shader = create_shader(GL_FRAGMENT_SHADER, axes_fragment_shader_src);
+  gl_state->axes.shader_program = glCreateProgram();
+  glAttachShader(gl_state->axes.shader_program, gl_state->axes.vertex_shader);
+  glAttachShader(gl_state->axes.shader_program, gl_state->axes.fragment_shader);
+  glBindFragDataLocation(gl_state->axes.shader_program, 0, "outColor");
+  glLinkProgram(gl_state->axes.shader_program);
+  glUseProgram(gl_state->axes.shader_program);
 
-  glGenVertexArrays(1, &g_pplane_state.axes.vao);
-  glBindVertexArray(g_pplane_state.axes.vao);
+  glGenVertexArrays(1, &gl_state->axes.vao);
+  glBindVertexArray(gl_state->axes.vao);
 
-  glGenBuffers(1, &g_pplane_state.axes.vbo);
+  glGenBuffers(1, &gl_state->axes.vbo);
 
-  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.axes.vbo);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(g_pplane_state.axes.endpoints),
-               g_pplane_state.axes.endpoints, GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, gl_state->axes.vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(gl_state->axes.endpoints),
+               gl_state->axes.endpoints, GL_STATIC_DRAW);
 
-  g_pplane_state.axes.attributes.pos =
-    glGetAttribLocation(g_pplane_state.axes.shader_program, "pos");
-  glEnableVertexAttribArray(g_pplane_state.axes.attributes.pos);
-  glVertexAttribPointer(g_pplane_state.axes.attributes.pos, 2, GL_FLOAT,
+  gl_state->axes.attributes.pos =
+    glGetAttribLocation(gl_state->axes.shader_program, "pos");
+  glEnableVertexAttribArray(gl_state->axes.attributes.pos);
+  glVertexAttribPointer(gl_state->axes.attributes.pos, 2, GL_FLOAT,
                         GL_FALSE, 0, 0);
-  g_pplane_state.axes.uniforms.scale =
-    glGetUniformLocation(g_pplane_state.axes.shader_program, "scale_factor");
+  gl_state->axes.uniforms.scale =
+    glGetUniformLocation(gl_state->axes.shader_program, "scale_factor");
 
   return 0;
 }
 
 int
-create_solutions_gl_state() {
-  g_pplane_state.solutions.vertex_shader = create_shader(GL_VERTEX_SHADER, axes_vertex_shader_src);
-  g_pplane_state.solutions.fragment_shader = create_shader(GL_FRAGMENT_SHADER, axes_fragment_shader_src);
-  g_pplane_state.solutions.shader_program = glCreateProgram();
-  glAttachShader(g_pplane_state.solutions.shader_program, g_pplane_state.solutions.vertex_shader);
-  glAttachShader(g_pplane_state.solutions.shader_program, g_pplane_state.solutions.fragment_shader);
-  glBindFragDataLocation(g_pplane_state.solutions.shader_program, 0, "outColor");
-  glLinkProgram(g_pplane_state.solutions.shader_program);
-  glUseProgram(g_pplane_state.solutions.shader_program);
+create_solutions_gl_state(pplane_state_t *pplane_state) {
+  gl_state_t *gl_state = pplane_state->gl_state;
+  gl_state->solutions.vertex_shader = create_shader(GL_VERTEX_SHADER, axes_vertex_shader_src);
+  gl_state->solutions.fragment_shader = create_shader(GL_FRAGMENT_SHADER, axes_fragment_shader_src);
+  gl_state->solutions.shader_program = glCreateProgram();
+  glAttachShader(gl_state->solutions.shader_program, gl_state->solutions.vertex_shader);
+  glAttachShader(gl_state->solutions.shader_program, gl_state->solutions.fragment_shader);
+  glBindFragDataLocation(gl_state->solutions.shader_program, 0, "outColor");
+  glLinkProgram(gl_state->solutions.shader_program);
+  glUseProgram(gl_state->solutions.shader_program);
 
-  glGenVertexArrays(1, &g_pplane_state.solutions.vao);
-  glBindVertexArray(g_pplane_state.solutions.vao);
+  glGenVertexArrays(1, &gl_state->solutions.vao);
+  glBindVertexArray(gl_state->solutions.vao);
 
-  glGenBuffers(1, &g_pplane_state.solutions.vbo);
+  glGenBuffers(1, &gl_state->solutions.vbo);
 
-  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.solutions.vbo);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(g_pplane_state.solutions.solutions),
-               g_pplane_state.solutions.solutions, GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, gl_state->solutions.vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(gl_state->solutions.solutions),
+               gl_state->solutions.solutions, GL_STATIC_DRAW);
 
-  g_pplane_state.solutions.attributes.pos =
-    glGetAttribLocation(g_pplane_state.solutions.shader_program, "pos");
-  glEnableVertexAttribArray(g_pplane_state.solutions.attributes.pos);
-  glVertexAttribPointer(g_pplane_state.solutions.attributes.pos, 2, GL_FLOAT,
+  gl_state->solutions.attributes.pos =
+    glGetAttribLocation(gl_state->solutions.shader_program, "pos");
+  glEnableVertexAttribArray(gl_state->solutions.attributes.pos);
+  glVertexAttribPointer(gl_state->solutions.attributes.pos, 2, GL_FLOAT,
                         GL_FALSE, 0, 0);
-  g_pplane_state.solutions.uniforms.scale =
-    glGetUniformLocation(g_pplane_state.solutions.shader_program, "scale_factor");
+  gl_state->solutions.uniforms.scale =
+    glGetUniformLocation(gl_state->solutions.shader_program, "scale_factor");
 
   return 0;
 }
 
 int
-create_plane_gl_resources() {
-  g_pplane_state.plane.vertex_shader = create_shader(GL_VERTEX_SHADER, vertex_shader_src);
-  g_pplane_state.plane.fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_src);
-  g_pplane_state.plane.geometry_shader = create_shader(GL_GEOMETRY_SHADER, geometry_shader_src);
+create_plane_gl_resources(pplane_state_t *pplane_state) {
+  gl_state_t *gl_state = pplane_state->gl_state;
+  gl_state->plane.vertex_shader = create_shader(GL_VERTEX_SHADER, vertex_shader_src);
+  gl_state->plane.fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_src);
+  gl_state->plane.geometry_shader = create_shader(GL_GEOMETRY_SHADER, geometry_shader_src);
 
-  g_pplane_state.plane.shader_program = glCreateProgram();
-  glAttachShader(g_pplane_state.plane.shader_program, g_pplane_state.plane.vertex_shader);
-  glAttachShader(g_pplane_state.plane.shader_program, g_pplane_state.plane.fragment_shader);
-  glAttachShader(g_pplane_state.plane.shader_program, g_pplane_state.plane.geometry_shader);
-  glBindFragDataLocation(g_pplane_state.plane.shader_program, 0, "outColor");
-  glLinkProgram(g_pplane_state.plane.shader_program);
-  glUseProgram(g_pplane_state.plane.shader_program);
+  gl_state->plane.shader_program = glCreateProgram();
+  glAttachShader(gl_state->plane.shader_program, gl_state->plane.vertex_shader);
+  glAttachShader(gl_state->plane.shader_program, gl_state->plane.fragment_shader);
+  glAttachShader(gl_state->plane.shader_program, gl_state->plane.geometry_shader);
+  glBindFragDataLocation(gl_state->plane.shader_program, 0, "outColor");
+  glLinkProgram(gl_state->plane.shader_program);
+  glUseProgram(gl_state->plane.shader_program);
 
   // Create VAO
-  glGenVertexArrays(1, &g_pplane_state.plane.vao);
-  glBindVertexArray(g_pplane_state.plane.vao);
+  glGenVertexArrays(1, &gl_state->plane.vao);
+  glBindVertexArray(gl_state->plane.vao);
 
   /* Buffer data */
-  glGenBuffers(1, &g_pplane_state.plane.vbo);
+  glGenBuffers(1, &gl_state->plane.vbo);
 
-  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.plane.vbo);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, gl_state->plane.vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(gl_state->plane.points), gl_state->plane.points, GL_STATIC_DRAW);
 
   // Specify layout of point data
-  g_pplane_state.plane.attributes.pos =
-    glGetAttribLocation(g_pplane_state.plane.shader_program, "pos");
-  glEnableVertexAttribArray(g_pplane_state.plane.attributes.pos);
-  glVertexAttribPointer(g_pplane_state.plane.attributes.pos, 2, GL_FLOAT,
+  gl_state->plane.attributes.pos =
+    glGetAttribLocation(gl_state->plane.shader_program, "pos");
+  glEnableVertexAttribArray(gl_state->plane.attributes.pos);
+  glVertexAttribPointer(gl_state->plane.attributes.pos, 2, GL_FLOAT,
                         GL_FALSE, 4*sizeof(float), 0);
 
-  g_pplane_state.plane.attributes.dir =
-    glGetAttribLocation(g_pplane_state.plane.shader_program, "dir");
-  glEnableVertexAttribArray(g_pplane_state.plane.attributes.dir);
-  glVertexAttribPointer(g_pplane_state.plane.attributes.dir, 2, GL_FLOAT,
+  gl_state->plane.attributes.dir =
+    glGetAttribLocation(gl_state->plane.shader_program, "dir");
+  glEnableVertexAttribArray(gl_state->plane.attributes.dir);
+  glVertexAttribPointer(gl_state->plane.attributes.dir, 2, GL_FLOAT,
                         GL_FALSE, 4*sizeof(float),
                         (void*)(2*sizeof(float)));
 
-  g_pplane_state.plane.uniforms.scale =
-    glGetUniformLocation(g_pplane_state.plane.shader_program, "scale_factor");
+  gl_state->plane.uniforms.scale =
+    glGetUniformLocation(gl_state->plane.shader_program, "scale_factor");
 
   return 0;
 }
 
 int
-create_gl_resources() {
+create_gl_resources(pplane_state_t *pplane_state) {
   /* Plane */
-  create_plane_gl_resources();
+  create_plane_gl_resources(pplane_state);
   /* Axes */
-  create_axes_gl_state();
+  create_axes_gl_state(pplane_state);
   /* Solutions */
-  create_solutions_gl_state();
+  create_solutions_gl_state(pplane_state);
 
   return 0;
 }
@@ -297,51 +230,53 @@ canonical_mouse_pos() {
 }
 
 vec2
-real_to_canonical_coords(float x, float y) {
+real_to_canonical_coords(pplane_state_t *pplane_state, float x, float y) {
   vec2 result;
-  result.x = (x * g_pplane_state.scaleX) - g_pplane_state.translateX;
-  result.y = (y * g_pplane_state.scaleY) - g_pplane_state.translateY;
+  result.x = (x * pplane_state->scaleX) - pplane_state->translateX;
+  result.y = (y * pplane_state->scaleY) - pplane_state->translateY;
 
   return result;
 }
 
 vec2
-canonical_to_real_coords(float x, float y) {
+canonical_to_real_coords(pplane_state_t *pplane_state, float x, float y) {
   vec2 result;
-  result.x = (x + g_pplane_state.translateX) / g_pplane_state.scaleX;
-  result.y = (y + g_pplane_state.translateY) / g_pplane_state.scaleY;
+  result.x = (x + pplane_state->translateX) / pplane_state->scaleX;
+  result.y = (y + pplane_state->translateY) / pplane_state->scaleY;
 
   return result;
 }
 
 static void
-render() {
-  glUseProgram(g_pplane_state.plane.shader_program);
-  glBindVertexArray(g_pplane_state.plane.vao);
-  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.plane.vbo);
+render(pplane_state_t *pplane_state) {
+  gl_state_t *gl_state = pplane_state->gl_state;
+  glUseProgram(gl_state->plane.shader_program);
+  glBindVertexArray(gl_state->plane.vao);
+  glBindBuffer(GL_ARRAY_BUFFER, gl_state->plane.vbo);
 
   /* TODO: Can I update just the data at points[num_points-1] ? */
-  glBufferSubData(GL_ARRAY_BUFFER, 0, g_pplane_state.points_size, points);
-  glDrawArrays(GL_POINTS, 0, g_pplane_state.num_points);
+  glBufferSubData(GL_ARRAY_BUFFER, 0,
+                  pplane_state->points_size, gl_state->plane.points);
+  glDrawArrays(GL_POINTS, 0, pplane_state->num_points);
 
   /* Axes */
-  glUseProgram(g_pplane_state.axes.shader_program);
-  glBindVertexArray(g_pplane_state.axes.vao);
-  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.axes.vbo);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(g_pplane_state.axes.endpoints), g_pplane_state.axes.endpoints);
-  glUniform2f(g_pplane_state.axes.uniforms.scale, 1.0, 1.0);
+  glUseProgram(gl_state->axes.shader_program);
+  glBindVertexArray(gl_state->axes.vao);
+  glBindBuffer(GL_ARRAY_BUFFER, gl_state->axes.vbo);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(gl_state->axes.endpoints), gl_state->axes.endpoints);
+  glUniform2f(gl_state->axes.uniforms.scale, 1.0, 1.0);
 
   glDrawArrays(GL_LINE_STRIP, 0, 6);
 
   /* Solutions */
-  glUseProgram(g_pplane_state.solutions.shader_program);
-  glBindVertexArray(g_pplane_state.solutions.vao);
+  glUseProgram(gl_state->solutions.shader_program);
+  glBindVertexArray(gl_state->solutions.vao);
 
-  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.solutions.vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, gl_state->solutions.vbo);
 
-  for (int i = 0; i < g_pplane_state.solutions.num_solutions; i++) {
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(g_pplane_state.solutions.solutions[i]), g_pplane_state.solutions.solutions[i]);
-    glUniform2f(g_pplane_state.solutions.uniforms.scale, 1.0, 1.0);
+  for (int i = 0; i < gl_state->solutions.num_solutions; i++) {
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(gl_state->solutions.solutions[i]), gl_state->solutions.solutions[i]);
+    glUniform2f(gl_state->solutions.uniforms.scale, 1.0, 1.0);
     glDrawArrays(GL_LINE_STRIP, 0, 2*HALF_NUM_STEPS_PER_SOLUTION);
   }
 
@@ -349,24 +284,26 @@ render() {
 }
 
 static void
-recompute_scale_and_translate() {
-  g_pplane_state.scaleX = 2.0f / (g_pplane_state.maxX - g_pplane_state.minX);
-  g_pplane_state.scaleY = 2.0f / (g_pplane_state.maxY - g_pplane_state.minY);
+recompute_scale_and_translate(pplane_state_t *pplane_state) {
+  pplane_state->scaleX = 2.0f / (pplane_state->maxX - pplane_state->minX);
+  pplane_state->scaleY = 2.0f / (pplane_state->maxY - pplane_state->minY);
 
-  g_pplane_state.translateX = 1.0f - (-2*g_pplane_state.minX /
-                                      (g_pplane_state.maxX - g_pplane_state.minX));
-  g_pplane_state.translateY = 1.0f - (-2*g_pplane_state.minY /
-                                      (g_pplane_state.maxY - g_pplane_state.minY));
+  pplane_state->translateX = 1.0f - (-2*pplane_state->minX /
+                                      (pplane_state->maxX - pplane_state->minX));
+  pplane_state->translateY = 1.0f - (-2*pplane_state->minY /
+                                      (pplane_state->maxY - pplane_state->minY));
 
 }
 
 static void
-fill_plane_data() {
-  vec2 min = canonical_to_real_coords(-1.0, -1.0);
-  vec2 max = canonical_to_real_coords(1.0, 1.0);
+fill_plane_data(pplane_state_t *pplane_state) {
+  vec2 min = canonical_to_real_coords(pplane_state, -1.0, -1.0);
+  vec2 max = canonical_to_real_coords(pplane_state, 1.0, 1.0);
 
   float stepX = (max.x - min.x) / num_rows;
   float stepY = (max.y - min.y) / num_columns;
+
+  point_vertex *points = pplane_state->gl_state->plane.points;
 
   int index = 0;
   for (float i = min.x;
@@ -377,7 +314,8 @@ fill_plane_data() {
          j += stepY) {
       vec2 v = {.x = i, .y = j };
       vec2 arrow = unit_vector(diffeq_system(v));
-      vec2 canon_coords = real_to_canonical_coords(i, j);
+      vec2 canon_coords = real_to_canonical_coords(pplane_state, i, j);
+
       points[index].x = canon_coords.x;
       points[index].y = canon_coords.y;
 
@@ -390,61 +328,75 @@ fill_plane_data() {
 }
 
 static void
-fill_axes_data() {
-  vec2 left = real_to_canonical_coords(g_pplane_state.minX, 0);
-  g_pplane_state.axes.endpoints[0][0] = left.x;
-  g_pplane_state.axes.endpoints[0][1] = left.y;
+fill_axes_data(pplane_state_t *pplane_state) {
+  gl_state_t *gl_state = pplane_state->gl_state;
+  vec2 left = real_to_canonical_coords(pplane_state,
+                                       pplane_state->minX, 0);
+  gl_state->axes.endpoints[0][0] = left.x;
+  gl_state->axes.endpoints[0][1] = left.y;
 
-  vec2 center = real_to_canonical_coords(0, 0);
-  g_pplane_state.axes.endpoints[1][0] = center.x;
-  g_pplane_state.axes.endpoints[1][1] = center.y;
+  vec2 center = real_to_canonical_coords(pplane_state,
+                                         0, 0);
+  gl_state->axes.endpoints[1][0] = center.x;
+  gl_state->axes.endpoints[1][1] = center.y;
 
-  vec2 top = real_to_canonical_coords(0, g_pplane_state.maxY);
-  g_pplane_state.axes.endpoints[2][0] = top.x;
-  g_pplane_state.axes.endpoints[2][1] = top.y;
+  vec2 top = real_to_canonical_coords(pplane_state,
+                                      0, pplane_state->maxY);
+  gl_state->axes.endpoints[2][0] = top.x;
+  gl_state->axes.endpoints[2][1] = top.y;
 
-  vec2 bottom = real_to_canonical_coords(0, g_pplane_state.minY);
-  g_pplane_state.axes.endpoints[3][0] = bottom.x;
-  g_pplane_state.axes.endpoints[3][1] = bottom.y;
+  vec2 bottom = real_to_canonical_coords(pplane_state,
+                                         0, pplane_state->minY);
+  gl_state->axes.endpoints[3][0] = bottom.x;
+  gl_state->axes.endpoints[3][1] = bottom.y;
 
-  g_pplane_state.axes.endpoints[4][0] = center.x;
-  g_pplane_state.axes.endpoints[4][1] = center.y;
+  gl_state->axes.endpoints[4][0] = center.x;
+  gl_state->axes.endpoints[4][1] = center.y;
 
-  vec2 right = real_to_canonical_coords(g_pplane_state.maxX, 0);
-  g_pplane_state.axes.endpoints[5][0] = right.x;
-  g_pplane_state.axes.endpoints[5][1] = right.y;
+  vec2 right = real_to_canonical_coords(pplane_state,
+                                        pplane_state->maxX, 0);
+  gl_state->axes.endpoints[5][0] = right.x;
+  gl_state->axes.endpoints[5][1] = right.y;
 }
 
 static void
-set_mouse_position() {
+set_mouse_position(pplane_state_t *pplane_state) {
   vec2 m = canonical_mouse_pos();
-  vec2 real_m = canonical_to_real_coords(m.x, m.y);
+  vec2 real_m = canonical_to_real_coords(pplane_state,
+                                         m.x, m.y);
   vec2 arrow = unit_vector(diffeq_system(real_m));
+  point_vertex *points = pplane_state->gl_state->plane.points;
 
-  points[g_pplane_state.num_points-1].x = m.x;
-  points[g_pplane_state.num_points-1].y = m.y;
-  points[g_pplane_state.num_points-1].dirX = arrow.x;
-  points[g_pplane_state.num_points-1].dirY = arrow.y;
+  points[pplane_state->num_points-1].x = m.x;
+  points[pplane_state->num_points-1].y = m.y;
+  points[pplane_state->num_points-1].dirX = arrow.x;
+  points[pplane_state->num_points-1].dirY = arrow.y;
 }
 
 static void
-handle_event(SDL_Event *event) {
+handle_event(pplane_state_t *pplane_state, SDL_Event *event) {
+  gl_state_t *gl_state = pplane_state->gl_state;
   /* TODO: ignore mouse clicks on Nuklear GUI */
   if (event->type == SDL_MOUSEBUTTONDOWN) {
-    int solutions_idx = g_pplane_state.solutions.num_solutions;
+    int solutions_idx = gl_state->solutions.num_solutions;
 
     vec2 canon_init = canonical_mouse_pos();
-    vec2 real_init = canonical_to_real_coords(canon_init.x,
+    vec2 real_init = canonical_to_real_coords(pplane_state,
+                                              canon_init.x,
                                               canon_init.y);
-    g_pplane_state.solutions.init[solutions_idx][0] = real_init.x;
-    g_pplane_state.solutions.init[solutions_idx][1] = real_init.y;
+    gl_state->solutions.init[solutions_idx][0] = real_init.x;
+    gl_state->solutions.init[solutions_idx][1] = real_init.y;
 
-    g_pplane_state.solutions.num_solutions += 1;
-    g_pplane_state.solutions.recompute_solutions = true;
+    gl_state->solutions.num_solutions += 1;
+    gl_state->solutions.recompute_solutions = true;
   }
 }
 
 int main(int argc, char *argv[]) {
+  gl_state_t gl_state;
+  pplane_state_t pplane_state;
+  pplane_state.gl_state = &gl_state;
+
   env.x = 2.3;
   env.y = 1.0;
   printf("%f\n", expression());
@@ -466,7 +418,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  g_pplane_state.solutions.num_solutions = 0;
+  gl_state.solutions.num_solutions = 0;
 
 
   /* GUI */
@@ -482,34 +434,35 @@ int main(int argc, char *argv[]) {
   struct nk_color background = nk_rgb(28,48,62);
 
   /* NOTE: last point is for the cursor */
-  g_pplane_state.num_points = num_rows*num_columns + 1;
-  g_pplane_state.points_size = sizeof(point_vertex) *
-    g_pplane_state.num_points;
+  pplane_state.num_points = num_rows*num_columns + 1;
+  pplane_state.points_size = sizeof(point_vertex) *
+    pplane_state.num_points;
 
   /* FIXME: when the bounds of the plane are changed,
      `fill_plane_data` tries to fill in more points than
      num_rows*num_columns. To account for that, I've allocated extra
      storage. However, the real fix is to get rid of the extra
      points. */
-  points = malloc(2*g_pplane_state.points_size);
+  gl_state.plane.points = malloc(2*pplane_state.points_size);
 
   /* Shaders and GLSL program */
-  create_gl_resources();
-  glUseProgram(g_pplane_state.plane.shader_program);
-  glBindVertexArray(g_pplane_state.plane.vao);
-  glBindBuffer(GL_ARRAY_BUFFER, g_pplane_state.plane.vbo);
+  create_gl_resources(&pplane_state);
+  glUseProgram(gl_state.plane.shader_program);
+  glBindVertexArray(gl_state.plane.vao);
+  glBindBuffer(GL_ARRAY_BUFFER, gl_state.plane.vbo);
 
-  glUniform2f(g_pplane_state.plane.uniforms.scale, 1.0, 1.0);
+  glUniform2f(gl_state.plane.uniforms.scale, 1.0, 1.0);
 
-  g_pplane_state.minX = -5.0;
-  g_pplane_state.minY = -20.0;
-  g_pplane_state.maxX = 20.0;
-  g_pplane_state.maxY = 10.0;
+  pplane_state.minX = -5.0;
+  pplane_state.minY = -20.0;
+  pplane_state.maxX = 20.0;
+  pplane_state.maxY = 10.0;
 
-  recompute_scale_and_translate();
-  fill_plane_data();
+  recompute_scale_and_translate(&pplane_state);
+  fill_plane_data(&pplane_state);
 
-  glBufferData(GL_ARRAY_BUFFER, g_pplane_state.points_size, points, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, pplane_state.points_size,
+               gl_state.plane.points, GL_STATIC_DRAW);
 
   SDL_Event window_event;
   while (true) {
@@ -517,7 +470,7 @@ int main(int argc, char *argv[]) {
     if (SDL_PollEvent(&window_event)) {
       if (window_event.type == SDL_QUIT) break;
       nk_sdl_handle_event(&window_event);
-      handle_event(&window_event);
+      handle_event(&pplane_state, &window_event);
     }
     nk_input_end(ctx);
 
@@ -545,16 +498,16 @@ int main(int argc, char *argv[]) {
         nk_property_float(ctx, "y_max:", -100, &maxY, 100, 10, 1);
 
         if (nk_button_label(ctx, "Apply changes", NK_BUTTON_DEFAULT)) {
-          g_pplane_state.solutions.recompute_solutions = true;
-          g_pplane_state.minX = minX;
-          g_pplane_state.maxX = maxX;
+          gl_state.solutions.recompute_solutions = true;
+          pplane_state.minX = minX;
+          pplane_state.maxX = maxX;
 
-          g_pplane_state.minY = minY;
-          g_pplane_state.maxY = maxY;
+          pplane_state.minY = minY;
+          pplane_state.maxY = maxY;
         }
 
         if (nk_button_label(ctx, "Clear solutions", NK_BUTTON_DEFAULT)) {
-          g_pplane_state.solutions.num_solutions = 0;
+          gl_state.solutions.num_solutions = 0;
         }
 
       }
@@ -590,41 +543,43 @@ int main(int argc, char *argv[]) {
     }
 
     /* TODO: Check whether bounds have changed before doing this.  */
-    recompute_scale_and_translate();
-    fill_plane_data();
+    recompute_scale_and_translate(&pplane_state);
+    fill_plane_data(&pplane_state);
 
-    fill_axes_data();
-    set_mouse_position();
+    fill_axes_data(&pplane_state);
+    set_mouse_position(&pplane_state);
 
     /* Solver test */
     /* TODO- Add a check to re-fill solutions buffer only when
        necessary */
-    if (g_pplane_state.solutions.recompute_solutions) {
-      for (int c = 0; c < g_pplane_state.solutions.num_solutions; c++) {
+    if (gl_state.solutions.recompute_solutions) {
+      for (int c = 0; c < gl_state.solutions.num_solutions; c++) {
         vec2 current;
-        current.x = g_pplane_state.solutions.init[c][0];
-        current.y = g_pplane_state.solutions.init[c][1];
+        current.x = gl_state.solutions.init[c][0];
+        current.y = gl_state.solutions.init[c][1];
 
         float dt = -SOLUTION_DT;
         for (int i = HALF_NUM_STEPS_PER_SOLUTION; i >= 0; i--) {
-          vec2 current_canon = real_to_canonical_coords(current.x, current.y);
-          g_pplane_state.solutions.solutions[c][i][0] = current_canon.x;
-          g_pplane_state.solutions.solutions[c][i][1] = current_canon.y;
+          vec2 current_canon = real_to_canonical_coords(&pplane_state,
+                                                        current.x, current.y);
+          gl_state.solutions.solutions[c][i][0] = current_canon.x;
+          gl_state.solutions.solutions[c][i][1] = current_canon.y;
           current = rk4(current, dt);
         }
 
         dt = SOLUTION_DT;
-        current.x = g_pplane_state.solutions.init[c][0];
-        current.y = g_pplane_state.solutions.init[c][1];
+        current.x = gl_state.solutions.init[c][0];
+        current.y = gl_state.solutions.init[c][1];
 
         for (int i = HALF_NUM_STEPS_PER_SOLUTION; i < 2*HALF_NUM_STEPS_PER_SOLUTION; i++) {
-          vec2 current_canon = real_to_canonical_coords(current.x, current.y);
-          g_pplane_state.solutions.solutions[c][i][0] = current_canon.x;
-          g_pplane_state.solutions.solutions[c][i][1] = current_canon.y;
+          vec2 current_canon = real_to_canonical_coords(&pplane_state,
+                                                        current.x, current.y);
+          gl_state.solutions.solutions[c][i][0] = current_canon.x;
+          gl_state.solutions.solutions[c][i][1] = current_canon.y;
           current = rk4(current, dt);
         }
       }
-      g_pplane_state.solutions.recompute_solutions = false;
+      gl_state.solutions.recompute_solutions = false;
     }
 
     /* Draw */
@@ -635,14 +590,14 @@ int main(int argc, char *argv[]) {
       glClear(GL_COLOR_BUFFER_BIT);
       glClearColor(bg[0], bg[1], bg[2], bg[3]);
 
-      render();
+      render(&pplane_state);
 
       SDL_GL_SwapWindow(window);}
 
   }
 
   nk_sdl_shutdown();
-  free(points);
+  free(gl_state.plane.points);
   SDL_GL_DeleteContext(context);
   SDL_DestroyWindow(window);
   SDL_Quit();
