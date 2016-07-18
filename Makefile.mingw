@@ -1,4 +1,4 @@
-OBJS = main.c gl3w/gl3w.c
+OBJS = pplane.c gl3w/gl3w.c
 OBJ_NAME = build/pplane
 
 all : $(OBJS)
