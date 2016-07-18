@@ -4,4 +4,4 @@ CFLAGS = -fsanitize=address -g -Wall --pedantic -std=c11
 INCLUDES = -Igl3w/
 
 all: $(SRC)
-	clang $(CFLAGS) -o pplane $(INCLUDES) $(SRC) $(LIBS)
+	gcc $(CFLAGS) -o pplane $(INCLUDES) $(SRC) $(LIBS)
