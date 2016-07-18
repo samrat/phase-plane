@@ -27,6 +27,7 @@ you'll need to do this step manually.
 After you have the `sdl/` folder, you can run `make -f Makefile.mingw`
 to get the exe in the `build/` folder.
 
+## Credits
 
 The original `pplane` for Matlab by John C. Polking, which inspired
 this project, can be found
