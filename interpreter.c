@@ -10,12 +10,8 @@
 float expression();
 void skip_white();
 
-char xtest[128] = "x*x+y";
-char ytest[128] = "x-y";
-
-char tmp[32];
-
-char *look = &xtest[0];
+static char tmp[32];
+static char *look;
 
 struct {
   float x,y;

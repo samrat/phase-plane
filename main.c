@@ -34,16 +34,16 @@ static const int num_rows = 20;
 static const int num_columns = 20;
 
 vec2
-diffeq_system(vec2 current) {
+diffeq_system(pplane_state_t *pplane_state, vec2 current) {
   vec2 result;
 
   env.x = current.x;
   env.y = current.y;
-  look = &xtest[0];
 
+  look = pplane_state->xeqn;
   result.x = expression();
 
-  look = &ytest[0];
+  look = pplane_state->yeqn;
   result.y = expression();
 
   return result;
@@ -313,7 +313,7 @@ fill_plane_data(pplane_state_t *pplane_state) {
          j < max.y;
          j += stepY) {
       vec2 v = {.x = i, .y = j };
-      vec2 arrow = unit_vector(diffeq_system(v));
+      vec2 arrow = unit_vector(diffeq_system(pplane_state, v));
       vec2 canon_coords = real_to_canonical_coords(pplane_state, i, j);
 
       points[index].x = canon_coords.x;
@@ -364,7 +364,7 @@ set_mouse_position(pplane_state_t *pplane_state) {
   vec2 m = canonical_mouse_pos();
   vec2 real_m = canonical_to_real_coords(pplane_state,
                                          m.x, m.y);
-  vec2 arrow = unit_vector(diffeq_system(real_m));
+  vec2 arrow = unit_vector(diffeq_system(pplane_state, real_m));
   point_vertex *points = pplane_state->gl_state->plane.points;
 
   points[pplane_state->num_points-1].x = m.x;
@@ -396,9 +396,12 @@ int main(int argc, char *argv[]) {
   gl_state_t gl_state;
   pplane_state_t pplane_state;
   pplane_state.gl_state = &gl_state;
+  snprintf(pplane_state.xeqn, 64, "x*x+y");
+  snprintf(pplane_state.yeqn, 64, "x-y");
 
   env.x = 2.3;
   env.y = 1.0;
+  look = pplane_state.xeqn;
   printf("%f\n", expression());
 
   SDL_Init(SDL_INIT_EVERYTHING);
@@ -524,7 +527,6 @@ int main(int argc, char *argv[]) {
         nk_layout_row_dynamic(ctx, 25, 1);
         nk_edit_string(ctx, NK_EDIT_SIMPLE, xbuffer, &xlen, 128, nk_filter_ascii);
         xbuffer[xlen] = 0;
-        printf("x = %s\n", xtest);
 
         static int ylen = 3;
         static char ybuffer[128] = "x-y";
@@ -532,11 +534,10 @@ int main(int argc, char *argv[]) {
         nk_layout_row_dynamic(ctx, 25, 1);
         nk_edit_string(ctx, NK_EDIT_SIMPLE, ybuffer, &ylen, 128, nk_filter_ascii);
         ybuffer[ylen] = 0;
-        printf("y = %s\n", ytest);
 
         if (nk_button_label(ctx, "Apply", NK_BUTTON_DEFAULT)) {
-          snprintf(xtest, 128, "%s", xbuffer);
-          snprintf(ytest, 128, "%s", ybuffer);
+          snprintf(pplane_state.xeqn, 128, "%s", xbuffer);
+          snprintf(pplane_state.yeqn, 128, "%s", ybuffer);
         }
       }
       nk_end(ctx);
@@ -564,7 +565,7 @@ int main(int argc, char *argv[]) {
                                                         current.x, current.y);
           gl_state.solutions.solutions[c][i][0] = current_canon.x;
           gl_state.solutions.solutions[c][i][1] = current_canon.y;
-          current = rk4(current, dt);
+          current = rk4(&pplane_state, current, dt);
         }
 
         dt = SOLUTION_DT;
@@ -576,7 +577,7 @@ int main(int argc, char *argv[]) {
                                                         current.x, current.y);
           gl_state.solutions.solutions[c][i][0] = current_canon.x;
           gl_state.solutions.solutions[c][i][1] = current_canon.y;
-          current = rk4(current, dt);
+          current = rk4(&pplane_state, current, dt);
         }
       }
       gl_state.solutions.recompute_solutions = false;

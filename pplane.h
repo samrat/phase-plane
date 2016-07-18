@@ -1,3 +1,5 @@
+#pragma once
+
 /* TODO: These will become configurable from the UI */
 #define HALF_NUM_STEPS_PER_SOLUTION 800
 #define SOLUTION_DT 0.01f
@@ -71,4 +73,6 @@ typedef struct {
   float minX, minY, maxX, maxY;
   float scaleX, scaleY;
   float translateX, translateY;
+
+  char xeqn[64], yeqn[64];
 } pplane_state_t;
