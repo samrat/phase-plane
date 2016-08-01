@@ -473,7 +473,9 @@ int main(int argc, char *argv[]) {
     if (SDL_PollEvent(&window_event)) {
       if (window_event.type == SDL_QUIT) break;
       nk_sdl_handle_event(&window_event);
-      handle_event(&pplane_state, &window_event);
+
+      if (nk_window_is_any_hovered(ctx) == 0)
+        handle_event(&pplane_state, &window_event);
     }
     nk_input_end(ctx);
 
@@ -500,7 +502,7 @@ int main(int argc, char *argv[]) {
         nk_layout_row_dynamic(ctx, 25, 1);
         nk_property_float(ctx, "y_max:", -100, &maxY, 100, 10, 1);
 
-        if (nk_button_label(ctx, "Apply changes", NK_BUTTON_DEFAULT)) {
+        if (nk_button_label(ctx, "Apply changes")) {
           gl_state.solutions.recompute_solutions = true;
           pplane_state.minX = minX;
           pplane_state.maxX = maxX;
@@ -509,7 +511,7 @@ int main(int argc, char *argv[]) {
           pplane_state.maxY = maxY;
         }
 
-        if (nk_button_label(ctx, "Clear solutions", NK_BUTTON_DEFAULT)) {
+        if (nk_button_label(ctx, "Clear solutions")) {
           gl_state.solutions.num_solutions = 0;
         }
 
@@ -535,7 +537,7 @@ int main(int argc, char *argv[]) {
         nk_edit_string(ctx, NK_EDIT_SIMPLE, ybuffer, &ylen, 128, nk_filter_ascii);
         ybuffer[ylen] = 0;
 
-        if (nk_button_label(ctx, "Apply", NK_BUTTON_DEFAULT)) {
+        if (nk_button_label(ctx, "Apply")) {
           snprintf(pplane_state.xeqn, 128, "%s", xbuffer);
           snprintf(pplane_state.yeqn, 128, "%s", ybuffer);
         }
