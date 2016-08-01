@@ -474,7 +474,7 @@ int main(int argc, char *argv[]) {
       if (window_event.type == SDL_QUIT) break;
       nk_sdl_handle_event(&window_event);
 
-      if (nk_window_is_any_hovered(ctx) == 0)
+      if (nk_item_is_any_active(ctx) == 0)
         handle_event(&pplane_state, &window_event);
     }
     nk_input_end(ctx);
